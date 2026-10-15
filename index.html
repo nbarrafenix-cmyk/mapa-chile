@@ -35,26 +35,36 @@
             border: 2px solid #e74c3c;
         }
         h2 { color: #333; margin: 0; }
-        .input-group {
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 20px;
+            background: #fafafa;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #e1e1e1;
+        }
+        .form-row {
             display: flex;
             gap: 10px;
-            margin-bottom: 10px;
         }
         input[type="text"], input[type="password"] {
             flex: 1;
             padding: 10px;
             border: 1px solid #ccc;
             border-radius: 4px;
-            font-size: 16px;
+            font-size: 15px;
         }
         button {
-            padding: 10px 20px;
+            padding: 12px 20px;
             background-color: #e74c3c;
             color: white;
             border: none;
             border-radius: 4px;
             font-size: 16px;
             cursor: pointer;
+            font-weight: bold;
         }
         button:hover {
             background-color: #c0392b;
@@ -62,6 +72,8 @@
         .btn-admin {
             background-color: #2c3e50;
             margin-bottom: 15px;
+            font-size: 14px;
+            padding: 10px 15px;
         }
         .btn-admin:hover {
             background-color: #1a252f;
@@ -85,7 +97,6 @@
             font-size: 14px;
             color: #2c3e50;
         }
-        /* Panel de Administrador Oculto por defecto */
         #adminSection {
             display: none;
             border-top: 2px solid #eee;
@@ -119,48 +130,55 @@
         <div class="header">
             <div>
                 <h2>Ingreso de Direcciones (Chile)</h2>
-                <p style="color: #666; margin: 5px 0 0 0;">Sistema de registro en tiempo real.</p>
+                <p style="color: #666; margin: 5px 0 0 0;">Sistema de registro en tiempo real con datos de contacto.</p>
             </div>
-            <!-- CAMBIA AQUÍ LA URL DE TU IMAGEN -->
             <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150" alt="Logo">
         </div>
 
-        <div class="info-panel" id="userMessage">
-            📍 Ingresa tu dirección en Chile para registrarla en el sistema.
+        <div class="info-panel" id="estadoConexion">
+            🔄 Conectando con la base de datos...
         </div>
 
-        <!-- Sección de Ingreso de Direcciones -->
-        <div class="input-group" id="formIngreso">
-            <input type="text" id="addressInput" placeholder="Ej: Ahumada 120, Santiago, Chile">
-            <button onclick="buscarYGuardarDireccion()">Enviar Dirección</button>
+        <!-- Formulario completo de ingreso -->
+        <div class="form-group" id="formIngreso">
+            <div class="form-row">
+                <input type="text" id="nombreInput" placeholder="Nombre completo de la persona">
+                <input type="text" id="rutInput" placeholder="RUT (ej: 12.345.678-9)">
+            </div>
+            <div class="form-row">
+                <input type="text" id="telefonoInput" placeholder="Número de teléfono (ej: +56912345678)">
+                <input type="text" id="addressInput" placeholder="Dirección en Chile (ej: Ahumada 120, Santiago)">
+            </div>
+            <button onclick="buscarYGuardarDireccion()">Guardar Registro en el Mapa</button>
         </div>
 
         <div id="map"></div>
 
-        <!-- Botón para Acceso de Administrador -->
         <button class="btn-admin" onclick="toggleAdminPanel()">🔒 Modo Administrador</button>
 
-        <!-- Panel de Administrador -->
         <div id="adminSection">
             <h3>Panel de Control - Administrador</h3>
             <div class="login-box" id="loginBox">
-                <input type="password" id="adminPassword" placeholder="Ingresa la contraseña (ej: admin123)">
+                <input type="password" id="adminPassword" placeholder="Contraseña (admin123)">
                 <button onclick="verificarAdmin()">Entrar</button>
             </div>
 
             <div id="adminContent" style="display:none;">
                 <p style="color: green; font-weight: bold;">✔ Sesión de administrador activa</p>
-                <h4>Listado completo de direcciones registradas:</h4>
+                <h4>Listado completo de registros:</h4>
                 <table>
                     <thead>
                         <tr>
+                            <th>Nombre</th>
+                            <th>RUT</th>
+                            <th>Teléfono</th>
                             <th>Dirección</th>
                             <th>Fecha</th>
                             <th>Acción</th>
                         </tr>
                     </thead>
                     <tbody id="tablaDirecciones">
-                        <!-- Se llena dinámicamente -->
+                        <tr><td colspan="6">Cargando registros...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -181,6 +199,18 @@
         };
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
+
+        // Verificar estado de conexión en tiempo real con Firebase
+        db.ref('.info/connected').on('value', function(snap) {
+            const panel = document.getElementById('estadoConexion');
+            if (snap.val() === true) {
+                panel.innerHTML = "🟢 Conectado correctamente a la nube. Listo para registrar datos.";
+                panel.style.background = "#e1f5fe";
+            } else {
+                panel.innerHTML = "🔴 Desconectado de la nube. Verifique su internet.";
+                panel.style.background = "#ffebee";
+            }
+        });
 
         // Inicializar el mapa centrado en Chile
         var map = L.map('map').setView([-33.4489, -70.6693], 12);
@@ -212,29 +242,46 @@
                 Object.keys(data).forEach(key => {
                     const item = data[key];
                     
-                    // 1. Dibujar marcador en el mapa para todos
-                    var nuevoMarcador = L.marker([item.lat, item.lon], {icon: redIcon})
-                        .bindPopup(`<b>${item.direccion}</b>`);
-                    markersGroup.addLayer(nuevoMarcador);
+                    if (item.lat && item.lon) {
+                        // Contenido del cuadro flotante al hacer clic en el marcador del mapa
+                        var popupContent = `
+                            <b>👤 Nombre:</b> ${item.nombre || 'No especificado'}<br>
+                            <b>🆔 RUT:</b> ${item.rut || 'No especificado'}<br>
+                            <b>📞 Teléfono:</b> ${item.telefono || 'No especificado'}<br>
+                            <b>📍 Dirección:</b> ${item.direccion}
+                        `;
 
-                    // 2. Agregar a la tabla del administrador
+                        var nuevoMarcador = L.marker([item.lat, item.lon], {icon: redIcon})
+                            .bindPopup(popupContent);
+                        markersGroup.addLayer(nuevoMarcador);
+                    }
+
                     let fechaFormateada = item.fecha ? new Date(item.fecha).toLocaleString() : 'Sin fecha';
                     tabla.innerHTML += `
                         <tr>
+                            <td>${item.nombre || '-'}</td>
+                            <td>${item.rut || '-'}</td>
+                            <td>${item.telefono || '-'}</td>
                             <td>${item.direccion}</td>
                             <td>${fechaFormateada}</td>
                             <td><button class="btn-delete" onclick="eliminarDireccion('${key}')">Eliminar</button></td>
                         </tr>
                     `;
                 });
+            } else {
+                tabla.innerHTML = '<tr><td colspan="6">No hay registros todavía.</td></tr>';
             }
         });
 
-        // Función para que los usuarios busquen y guarden estrictamente en Chile
+        // Función para buscar y guardar todos los datos en Chile
         function buscarYGuardarDireccion() {
+            var nombre = document.getElementById('nombreInput').value.trim();
+            var rut = document.getElementById('rutInput').value.trim();
+            var telefono = document.getElementById('telefonoInput').value.trim();
             var direccionInput = document.getElementById('addressInput').value.trim();
-            if (!direccionInput) {
-                alert('Por favor ingresa una dirección');
+
+            if (!nombre || !rut || !telefono || !direccionInput) {
+                alert('Por favor completa todos los campos (Nombre, RUT, Teléfono y Dirección)');
                 return;
             }
 
@@ -249,34 +296,43 @@
                         var lon = parseFloat(data[0].lon);
                         var nombreReal = data[0].display_name;
 
-                        // Guardar en Firebase
+                        // Guardar en Firebase con todos los campos
                         db.ref('direcciones').push({
+                            nombre: nombre,
+                            rut: rut,
+                            telefono: telefono,
                             direccion: nombreReal,
                             lat: lat,
                             lon: lon,
                             fecha: new Date().toISOString()
+                        }, (error) => {
+                            if (error) {
+                                alert('Error al guardar en la nube: ' + error.message);
+                            } else {
+                                alert('¡Registro guardado exitosamente en el mapa!');
+                                // Limpiar campos
+                                document.getElementById('nombreInput').value = '';
+                                document.getElementById('rutInput').value = '';
+                                document.getElementById('telefonoInput').value = '';
+                                document.getElementById('addressInput').value = '';
+                            }
                         });
 
-                        map.setView([lat, lon], 15);
-                        document.getElementById('addressInput').value = '';
-                        alert('¡Dirección guardada exitosamente!');
                     } else {
                         alert('No se encontró la dirección dentro de Chile. Intenta ser más específico.');
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Ocurrió un error al procesar la dirección.');
+                    alert('Ocurrió un error al procesar la dirección de búsqueda.');
                 });
         }
 
-        // Mostrar u ocultar el panel de administrador
         function toggleAdminPanel() {
             var section = document.getElementById('adminSection');
             section.style.display = section.style.display === 'none' ? 'block' : 'none';
         }
 
-        // Verificar contraseña de Administrador (Contraseña por defecto: admin123)
         function verificarAdmin() {
             var pass = document.getElementById('adminPassword').value;
             if (pass === 'admin123') {
@@ -287,11 +343,9 @@
             }
         }
 
-        // Función de administrador para eliminar un registro
         function eliminarDireccion(id) {
-            if (confirm("¿Estás seguro de eliminar esta dirección del registro?")) {
+            if (confirm("¿Estás seguro de eliminar este registro?")) {
                 db.ref('direcciones/' + id).remove()
-                    .then(() => alert('Dirección eliminada correctamente'))
                     .catch(error => alert('Error al eliminar'));
             }
         }
