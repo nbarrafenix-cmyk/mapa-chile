@@ -168,7 +168,7 @@
         <div id="adminSection">
             <h3>Panel de Control - Administrador</h3>
             <div class="login-box" id="loginBox">
-                <input type="password" id="adminPassword" placeholder="Contraseña (admin123)">
+                <input type="password" id="adminPassword" placeholder="Contraseña (Fenix2020)">
                 <button onclick="verificarAdmin()">Entrar</button>
             </div>
 
@@ -216,7 +216,6 @@
         }
         const db = firebase.database();
 
-        // Variable global para almacenar los datos actuales para el Excel
         let registrosGlobales = {};
 
         // Control de estado de conexión
@@ -300,40 +299,9 @@
                 return;
             }
 
-            // Cabeceras del archivo CSV
             let csvContent = "\uFEFFNombre,RUT,Teléfono,Dirección,Fecha,Latitud,Longitud\n";
 
             Object.keys(registrosGlobales).forEach(key => {
                 let item = registrosGlobales[key];
                 let nombre = `"${(item.nombre || '').replace(/"/g, '""')}"`;
-                let rut = `"${(item.rut || '').replace(/"/g, '""')}"`;
-                let telefono = `"${(item.telefono || '').replace(/"/g, '""')}"`;
-                let direccion = `"${(item.direccion || '').replace(/"/g, '""')}"`;
-                let fecha = item.fecha ? `"${new Date(item.fecha).toLocaleString()}"` : '""';
-                let lat = item.lat || '';
-                let lon = item.lon || '';
-
-                csvContent += `${nombre},${rut},${telefono},${direccion},${fecha},${lat},${lon}\n`;
-            });
-
-            // Crear archivo descargable
-            var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            var url = URL.createObjectURL(blob);
-            var link = document.createElement("a");
-            link.setAttribute("href", url);
-            link.setAttribute("download", "registros_direcciones_chile.csv");
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
-
-        // Función para buscar y guardar todos los datos en Chile
-        function buscarYGuardarDireccion() {
-            var nombre = document.getElementById('nombreInput').value.trim();
-            var rut = document.getElementById('rutInput').value.trim();
-            var telefono = document.getElementById('telefonoInput').value.trim();
-            var direccionInput = document.getElementById('addressInput').value.trim();
-
-            if (!nombre || !rut || !telefono || !direccionInput) {
-                alert('Por favor completa todos los campos (Nombre, RUT, Teléfono y Dirección)');
-                return;
+                let rut = `"${(item.rut || '').replace(/"/g, '
