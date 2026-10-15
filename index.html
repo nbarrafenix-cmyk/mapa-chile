@@ -186,4 +186,171 @@
     </div>
 
     <!-- Leaflet JS -->
-    <script src="
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Firebase SDK Compat -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+    <script>
+        // Configuración oficial de Firebase con tu ID mapa-chile-c2b86
+        const firebaseConfig = {
+            databaseURL: "https://mapa-chile-c2b86-default-rtdb.firebaseio.com"
+        };
+        
+        // Inicializar Firebase de forma segura
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.database();
+
+        // Control de estado de conexión con reintento visual
+        const panelConexion = document.getElementById('estadoConexion');
+        db.ref('.info/connected').on('value', function(snap) {
+            if (snap.val() === true) {
+                panelConexion.innerHTML = "🟢 Conectado correctamente a la nube. Listo para registrar datos.";
+                panelConexion.style.background = "#e1f5fe";
+            } else {
+                panelConexion.innerHTML = "🔴 Estableciendo conexión con Firebase...";
+                panelConexion.style.background = "#ffebee";
+            }
+        });
+
+        // Inicializar el mapa centrado en Chile
+        var map = L.map('map').setView([-33.4489, -70.6693], 12);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+            maxZoom: 20,
+            attribution: '© OpenStreetMap contributors | Chile'
+        }).addTo(map);
+
+        var markersGroup = L.layerGroup().addTo(map);
+
+        var redIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+        });
+
+        // Escuchar datos en tiempo real de la base de datos
+        db.ref('direcciones').on('value', (snapshot) => {
+            markersGroup.clearLayers();
+            const tabla = document.getElementById('tablaDirecciones');
+            tabla.innerHTML = '';
+            
+            const data = snapshot.val();
+            if (data) {
+                Object.keys(data).forEach(key => {
+                    const item = data[key];
+                    
+                    if (item.lat && item.lon) {
+                        var popupContent = `
+                            <b>👤 Nombre:</b> ${item.nombre || 'No especificado'}<br>
+                            <b>🆔 RUT:</b> ${item.rut || 'No especificado'}<br>
+                            <b>📞 Teléfono:</b> ${item.telefono || 'No especificado'}<br>
+                            <b>📍 Dirección:</b> ${item.direccion}
+                        `;
+
+                        var nuevoMarcador = L.marker([item.lat, item.lon], {icon: redIcon})
+                            .bindPopup(popupContent);
+                        markersGroup.addLayer(nuevoMarcador);
+                    }
+
+                    let fechaFormateada = item.fecha ? new Date(item.fecha).toLocaleString() : 'Sin fecha';
+                    tabla.innerHTML += `
+                        <tr>
+                            <td>${item.nombre || '-'}</td>
+                            <td>${item.rut || '-'}</td>
+                            <td>${item.telefono || '-'}</td>
+                            <td>${item.direccion}</td>
+                            <td>${fechaFormateada}</td>
+                            <td><button class="btn-delete" onclick="eliminarDireccion('${key}')">Eliminar</button></td>
+                        </tr>
+                    `;
+                });
+            } else {
+                tabla.innerHTML = '<tr><td colspan="6">No hay registros todavía.</td></tr>';
+            }
+        });
+
+        // Función para buscar y guardar todos los datos en Chile
+        function buscarYGuardarDireccion() {
+            var nombre = document.getElementById('nombreInput').value.trim();
+            var rut = document.getElementById('rutInput').value.trim();
+            var telefono = document.getElementById('telefonoInput').value.trim();
+            var direccionInput = document.getElementById('addressInput').value.trim();
+
+            if (!nombre || !rut || !telefono || !direccionInput) {
+                alert('Por favor completa todos los campos (Nombre, RUT, Teléfono y Dirección)');
+                return;
+            }
+
+            var queryBusqueda = direccionInput.toLowerCase().includes('chile') ? direccionInput : direccionInput + ", Chile";
+            var url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=cl&q=${encodeURIComponent(queryBusqueda)}`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        var lat = parseFloat(data[0].lat);
+                        var lon = parseFloat(data[0].lon);
+                        var nombreReal = data[0].display_name;
+
+                        // Guardar en Firebase con todos los campos
+                        db.ref('direcciones').push({
+                            nombre: nombre,
+                            rut: rut,
+                            telefono: telefono,
+                            direccion: nombreReal,
+                            lat: lat,
+                            lon: lon,
+                            fecha: new Date().toISOString()
+                        }, (error) => {
+                            if (error) {
+                                alert('Error al guardar en la nube: ' + error.message);
+                            } else {
+                                alert('¡Registro guardado exitosamente en el mapa!');
+                                document.getElementById('nombreInput').value = '';
+                                document.getElementById('rutInput').value = '';
+                                document.getElementById('telefonoInput').value = '';
+                                document.getElementById('addressInput').value = '';
+                            }
+                        });
+
+                    } else {
+                        alert('No se encontró la dirección dentro de Chile. Intenta ser más específico.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Ocurrió un error al procesar la dirección de búsqueda.');
+                });
+        }
+
+        function toggleAdminPanel() {
+            var section = document.getElementById('adminSection');
+            section.style.display = section.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function verificarAdmin() {
+            var pass = document.getElementById('adminPassword').value;
+            if (pass === 'admin123') {
+                document.getElementById('loginBox').style.display = 'none';
+                document.getElementById('adminContent').style.display = 'block';
+            } else {
+                alert('Contraseña incorrecta');
+            }
+        }
+
+        function eliminarDireccion(id) {
+            if (confirm("¿Estás seguro de eliminar este registro?")) {
+                db.ref('direcciones/' + id).remove()
+                    .catch(error => alert('Error al eliminar'));
+            }
+        }
+    </script>
+</body>
+</html>
