@@ -83,6 +83,15 @@
             padding: 5px 10px;
             font-size: 12px;
         }
+        .btn-excel {
+            background-color: #27ae60;
+            margin-bottom: 15px;
+            font-size: 14px;
+            padding: 10px 15px;
+        }
+        .btn-excel:hover {
+            background-color: #219653;
+        }
         #map {
             width: 100%;
             height: 450px;
@@ -165,6 +174,10 @@
 
             <div id="adminContent" style="display:none;">
                 <p style="color: green; font-weight: bold;">✔ Sesión de administrador activa</p>
+                
+                <!-- Botón para descargar Excel -->
+                <button class="btn-excel" onclick="descargarExcel()">📥 Descargar Registros en Excel</button>
+
                 <h4>Listado completo de registros:</h4>
                 <table>
                     <thead>
@@ -193,18 +206,20 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
     <script>
-        // Configuración oficial de Firebase con tu ID mapa-chile-c2b86
+        // Configuración oficial de Firebase
         const firebaseConfig = {
             databaseURL: "https://mapa-chile-c2b86-default-rtdb.firebaseio.com"
         };
         
-        // Inicializar Firebase de forma segura
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
         }
         const db = firebase.database();
 
-        // Control de estado de conexión con reintento visual
+        // Variable global para almacenar los datos actuales para el Excel
+        let registrosGlobales = {};
+
+        // Control de estado de conexión
         const panelConexion = document.getElementById('estadoConexion');
         db.ref('.info/connected').on('value', function(snap) {
             if (snap.val() === true) {
@@ -241,8 +256,10 @@
             const tabla = document.getElementById('tablaDirecciones');
             tabla.innerHTML = '';
             
-            const data = snapshot.val();
-            if (data) {
+            registrosGlobales = snapshot.val() || {};
+            const data = registrosGlobales;
+
+            if (Object.keys(data).length > 0) {
                 Object.keys(data).forEach(key => {
                     const item = data[key];
                     
@@ -276,6 +293,40 @@
             }
         });
 
+        // Función para descargar los datos en formato Excel (CSV compatible)
+        function descargarExcel() {
+            if (!registrosGlobales || Object.keys(registrosGlobales).length === 0) {
+                alert("No hay registros para descargar.");
+                return;
+            }
+
+            // Cabeceras del archivo CSV
+            let csvContent = "\uFEFFNombre,RUT,Teléfono,Dirección,Fecha,Latitud,Longitud\n";
+
+            Object.keys(registrosGlobales).forEach(key => {
+                let item = registrosGlobales[key];
+                let nombre = `"${(item.nombre || '').replace(/"/g, '""')}"`;
+                let rut = `"${(item.rut || '').replace(/"/g, '""')}"`;
+                let telefono = `"${(item.telefono || '').replace(/"/g, '""')}"`;
+                let direccion = `"${(item.direccion || '').replace(/"/g, '""')}"`;
+                let fecha = item.fecha ? `"${new Date(item.fecha).toLocaleString()}"` : '""';
+                let lat = item.lat || '';
+                let lon = item.lon || '';
+
+                csvContent += `${nombre},${rut},${telefono},${direccion},${fecha},${lat},${lon}\n`;
+            });
+
+            // Crear archivo descargable
+            var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            var url = URL.createObjectURL(blob);
+            var link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "registros_direcciones_chile.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
         // Función para buscar y guardar todos los datos en Chile
         function buscarYGuardarDireccion() {
             var nombre = document.getElementById('nombreInput').value.trim();
@@ -286,71 +337,3 @@
             if (!nombre || !rut || !telefono || !direccionInput) {
                 alert('Por favor completa todos los campos (Nombre, RUT, Teléfono y Dirección)');
                 return;
-            }
-
-            var queryBusqueda = direccionInput.toLowerCase().includes('chile') ? direccionInput : direccionInput + ", Chile";
-            var url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=cl&q=${encodeURIComponent(queryBusqueda)}`;
-
-            fetch(url)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.length > 0) {
-                        var lat = parseFloat(data[0].lat);
-                        var lon = parseFloat(data[0].lon);
-                        var nombreReal = data[0].display_name;
-
-                        // Guardar en Firebase con todos los campos
-                        db.ref('direcciones').push({
-                            nombre: nombre,
-                            rut: rut,
-                            telefono: telefono,
-                            direccion: nombreReal,
-                            lat: lat,
-                            lon: lon,
-                            fecha: new Date().toISOString()
-                        }, (error) => {
-                            if (error) {
-                                alert('Error al guardar en la nube: ' + error.message);
-                            } else {
-                                alert('¡Registro guardado exitosamente en el mapa!');
-                                document.getElementById('nombreInput').value = '';
-                                document.getElementById('rutInput').value = '';
-                                document.getElementById('telefonoInput').value = '';
-                                document.getElementById('addressInput').value = '';
-                            }
-                        });
-
-                    } else {
-                        alert('No se encontró la dirección dentro de Chile. Intenta ser más específico.');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Ocurrió un error al procesar la dirección de búsqueda.');
-                });
-        }
-
-        function toggleAdminPanel() {
-            var section = document.getElementById('adminSection');
-            section.style.display = section.style.display === 'none' ? 'block' : 'none';
-        }
-
-        function verificarAdmin() {
-            var pass = document.getElementById('adminPassword').value;
-            if (pass === 'admin123') {
-                document.getElementById('loginBox').style.display = 'none';
-                document.getElementById('adminContent').style.display = 'block';
-            } else {
-                alert('Contraseña incorrecta');
-            }
-        }
-
-        function eliminarDireccion(id) {
-            if (confirm("¿Estás seguro de eliminar este registro?")) {
-                db.ref('direcciones/' + id).remove()
-                    .catch(error => alert('Error al eliminar'));
-            }
-        }
-    </script>
-</body>
-</html>
