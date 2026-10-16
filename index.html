@@ -160,7 +160,7 @@
                 <input type="text" id="telefonoInput" placeholder="Número de teléfono (ej: +56912345678)">
             </div>
             <div class="form-row">
-                <input type="text" id="addressInput" placeholder="Dirección en Chile (ej: Ahumada 120, Santiago)" style="flex: 1;">
+                <input type="text" id="addressInput" placeholder="Dirección en Chile (ej: Bandera 120, Santiago)" style="flex: 1;">
             </div>
             <button onclick="buscarYGuardarDireccion()">Guardar Registro en el Mapa</button>
         </div>
@@ -354,14 +354,16 @@
                     if (data.length > 0) {
                         var lat = parseFloat(data[0].lat);
                         var lon = parseFloat(data[0].lon);
-                        var nombreReal = data[0].display_name;
+                        
+                        // CAMBIO: Guardamos el texto escrito por el usuario en lugar de data[0].display_name
+                        var direccionTextoLimpio = direccionInput;
 
                         db.ref('direcciones').push({
                             usuario: usuario,
                             nombre: nombre,
                             rut: rut,
                             telefono: telefono,
-                            direccion: nombreReal,
+                            direccion: direccionTextoLimpio, // <-- Aquí se guarda limpio
                             lat: lat,
                             lon: lon,
                             fecha: new Date().toISOString()
@@ -395,12 +397,12 @@
 
         function verificarAdmin() {
             var pass = document.getElementById('adminPassword').value;
-            var passwordCorrecta = "Fenix2020"; // Tu contraseña original
+            var passwordCorrecta = "Fenix2020";
 
             if (pass === passwordCorrecta) {
                 document.getElementById('loginBox').style.display = 'none';
                 document.getElementById('adminContent').style.display = 'block';
-                document.getElementById('adminPassword').value = ''; // Limpiar campo
+                document.getElementById('adminPassword').value = '';
             } else {
                 alert('Contraseña incorrecta');
             }
