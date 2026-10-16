@@ -141,7 +141,7 @@
                 <h2>Ingreso de Direcciones (Chile)</h2>
                 <p style="color: #666; margin: 5px 0 0 0;">Sistema de registro en tiempo real con datos de contacto.</p>
             </div>
-            <!-- Reemplaza el src con tu imagen en Base64 o el nombre de tu archivo local -->
+            <!-- Logo -->
             <img src="https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=150" alt="Logo Fénix">
         </div>
 
@@ -172,7 +172,6 @@
         <div id="adminSection">
             <h3>Panel de Control - Administrador</h3>
             <div class="login-box" id="loginBox">
-                <!-- Se cambió el placeholder para no mostrar pistas de la contraseña -->
                 <input type="password" id="adminPassword" placeholder="Ingrese contraseña de acceso">
                 <button onclick="verificarAdmin()">Entrar</button>
             </div>
@@ -300,7 +299,7 @@
             }
         });
 
-        // Función para descargar los datos en formato Excel (CSV compatible) con Usuario
+        // Función para descargar los datos en formato Excel (CSV compatible)
         function descargarExcel() {
             if (!registrosGlobales || Object.keys(registrosGlobales).length === 0) {
                 alert("No hay registros para descargar.");
@@ -396,21 +395,12 @@
 
         function verificarAdmin() {
             var pass = document.getElementById('adminPassword').value;
-            
-            // Codificación básica para evitar que la contraseña se lea a simple vista en el texto plano
-            // (Para cambiar la contraseña, puedes cambiar el texto codificado en Base64 o simplemente poner tu texto entre comillas si prefieres)
-            // Aquí 'RmFuaXgyMDIw' corresponde a 'Fenix2020' en Base64.
-            var passwordCorrectaB64 = "RmFuaXgyMDIw"; 
+            var passwordCorrecta = "Fenix2020"; // Tu contraseña original
 
-            // Función para decodificar de forma sencilla
-            function decodificar(b64) {
-                try { return atob(b64); } catch(e) { return ""; }
-            }
-
-            if (pass === decodificar(passwordCorrectaB64)) {
+            if (pass === passwordCorrecta) {
                 document.getElementById('loginBox').style.display = 'none';
                 document.getElementById('adminContent').style.display = 'block';
-                document.getElementById('adminPassword').value = ''; // Limpiar campo por seguridad
+                document.getElementById('adminPassword').value = ''; // Limpiar campo
             } else {
                 alert('Contraseña incorrecta');
             }
