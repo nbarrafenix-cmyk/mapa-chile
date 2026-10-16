@@ -14,7 +14,7 @@
             background-color: #f4f4f9;
         }
         .container {
-            max-width: 900px;
+            max-width: 950px;
             margin: 0 auto;
             background: white;
             padding: 20px;
@@ -121,7 +121,7 @@
             border: 1px solid #ddd;
             padding: 10px;
             text-align: left;
-            font-size: 14px;
+            font-size: 13px;
         }
         th {
             background-color: #f2f2f2;
@@ -141,22 +141,26 @@
                 <h2>Ingreso de Direcciones (Chile)</h2>
                 <p style="color: #666; margin: 5px 0 0 0;">Sistema de registro en tiempo real con datos de contacto.</p>
             </div>
-            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150" alt="Logo">
+            <!-- Logo personalizado cargado directamente desde el repositorio -->
+            <img src="logo.png" alt="Logo de la Aplicación" onerror="this.src='https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'">
         </div>
 
         <div class="info-panel" id="estadoConexion">
             🔄 Conectando con la base de datos...
         </div>
 
-        <!-- Formulario completo de ingreso -->
+        <!-- Formulario actualizado con Nombre de Usuario -->
         <div class="form-group" id="formIngreso">
             <div class="form-row">
+                <input type="text" id="usuarioInput" placeholder="Nombre de usuario (ej: admin_user)">
                 <input type="text" id="nombreInput" placeholder="Nombre completo de la persona">
-                <input type="text" id="rutInput" placeholder="RUT (ej: 12.345.678-9)">
             </div>
             <div class="form-row">
+                <input type="text" id="rutInput" placeholder="RUT (ej: 12.345.678-9)">
                 <input type="text" id="telefonoInput" placeholder="Número de teléfono (ej: +56912345678)">
-                <input type="text" id="addressInput" placeholder="Dirección en Chile (ej: Ahumada 120, Santiago)">
+            </div>
+            <div class="form-row">
+                <input type="text" id="addressInput" placeholder="Dirección en Chile (ej: Ahumada 120, Santiago)" style="flex: 1;">
             </div>
             <button onclick="buscarYGuardarDireccion()">Guardar Registro en el Mapa</button>
         </div>
@@ -182,6 +186,7 @@
                 <table>
                     <thead>
                         <tr>
+                            <th>Usuario</th>
                             <th>Nombre</th>
                             <th>RUT</th>
                             <th>Teléfono</th>
@@ -191,7 +196,7 @@
                         </tr>
                     </thead>
                     <tbody id="tablaDirecciones">
-                        <tr><td colspan="6">Cargando registros...</td></tr>
+                        <tr><td colspan="7">Cargando registros...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -206,7 +211,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
     <script>
-        // Configuración oficial de Firebase con la URL estándar de la base de datos
+        // Configuración oficial de Firebase
         const firebaseConfig = {
             databaseURL: "https://mapa-chile-c2b86-default-rtdb.firebaseio.com"
         };
@@ -218,15 +223,14 @@
 
         let registrosGlobales = {};
 
-        // Control de estado de conexión mejorado con escucha directa a Firebase
+        // Control de estado de conexión
         const panelConexion = document.getElementById('estadoConexion');
-        
         db.ref('.info/connected').on('value', function(snap) {
             if (snap.val() === true) {
                 panelConexion.innerHTML = "🟢 Conectado correctamente a la nube. Listo para registrar datos.";
                 panelConexion.style.background = "#e1f5fe";
             } else {
-                panelConexion.innerHTML = "🔴 Intentando reconectar con la base de datos...";
+                panelConexion.innerHTML = "🔴 Estableciendo conexión con Firebase...";
                 panelConexion.style.background = "#ffebee";
             }
         });
@@ -265,7 +269,8 @@
                     
                     if (item.lat && item.lon) {
                         var popupContent = `
-                            <b>👤 Nombre:</b> ${item.nombre || 'No especificado'}<br>
+                            <b>👤 Usuario:</b> ${item.usuario || 'No especificado'}<br>
+                            <b>📝 Nombre:</b> ${item.nombre || 'No especificado'}<br>
                             <b>🆔 RUT:</b> ${item.rut || 'No especificado'}<br>
                             <b>📞 Teléfono:</b> ${item.telefono || 'No especificado'}<br>
                             <b>📍 Dirección:</b> ${item.direccion}
@@ -279,6 +284,7 @@
                     let fechaFormateada = item.fecha ? new Date(item.fecha).toLocaleString() : 'Sin fecha';
                     tabla.innerHTML += `
                         <tr>
+                            <td>${item.usuario || '-'}</td>
                             <td>${item.nombre || '-'}</td>
                             <td>${item.rut || '-'}</td>
                             <td>${item.telefono || '-'}</td>
@@ -289,21 +295,22 @@
                     `;
                 });
             } else {
-                tabla.innerHTML = '<tr><td colspan="6">No hay registros todavía.</td></tr>';
+                tabla.innerHTML = '<tr><td colspan="7">No hay registros todavía.</td></tr>';
             }
         });
 
-        // Función para descargar los datos en formato Excel (CSV compatible)
+        // Función para descargar los datos en formato Excel (CSV compatible) con Usuario
         function descargarExcel() {
             if (!registrosGlobales || Object.keys(registrosGlobales).length === 0) {
                 alert("No hay registros para descargar.");
                 return;
             }
 
-            let csvContent = "\uFEFFNombre,RUT,Teléfono,Dirección,Fecha,Latitud,Longitud\n";
+            let csvContent = "\uFEFFUsuario,Nombre,RUT,Teléfono,Dirección,Fecha,Latitud,Longitud\n";
 
             Object.keys(registrosGlobales).forEach(key => {
                 let item = registrosGlobales[key];
+                let usuario = `"${(item.usuario || '').replace(/"/g, '""')}"`;
                 let nombre = `"${(item.nombre || '').replace(/"/g, '""')}"`;
                 let rut = `"${(item.rut || '').replace(/"/g, '""')}"`;
                 let telefono = `"${(item.telefono || '').replace(/"/g, '""')}"`;
@@ -312,7 +319,7 @@
                 let lat = item.lat || '';
                 let lon = item.lon || '';
 
-                csvContent += `${nombre},${rut},${telefono},${direccion},${fecha},${lat},${lon}\n`;
+                csvContent += `${usuario},${nombre},${rut},${telefono},${direccion},${fecha},${lat},${lon}\n`;
             });
 
             var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -327,13 +334,14 @@
 
         // Función para buscar y guardar todos los datos en Chile
         function buscarYGuardarDireccion() {
+            var usuario = document.getElementById('usuarioInput').value.trim();
             var nombre = document.getElementById('nombreInput').value.trim();
             var rut = document.getElementById('rutInput').value.trim();
             var telefono = document.getElementById('telefonoInput').value.trim();
             var direccionInput = document.getElementById('addressInput').value.trim();
 
-            if (!nombre || !rut || !telefono || !direccionInput) {
-                alert('Por favor completa todos los campos (Nombre, RUT, Teléfono y Dirección)');
+            if (!usuario || !nombre || !rut || !telefono || !direccionInput) {
+                alert('Por favor completa todos los campos (Usuario, Nombre, RUT, Teléfono y Dirección)');
                 return;
             }
 
@@ -349,6 +357,7 @@
                         var nombreReal = data[0].display_name;
 
                         db.ref('direcciones').push({
+                            usuario: usuario,
                             nombre: nombre,
                             rut: rut,
                             telefono: telefono,
@@ -361,6 +370,7 @@
                                 alert('Error al guardar en la nube: ' + error.message);
                             } else {
                                 alert('¡Registro guardado exitosamente en el mapa!');
+                                document.getElementById('usuarioInput').value = '';
                                 document.getElementById('nombreInput').value = '';
                                 document.getElementById('rutInput').value = '';
                                 document.getElementById('telefonoInput').value = '';
