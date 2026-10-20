@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registro de Direcciones y Autos - Chile</title>
+    <title>Seguimiento de Autos en Tiempo Real - Chile</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -152,7 +152,7 @@
         </div>
 
         <div class="info-panel" id="estadoConexion">
-            🔄 Conectando con la base de datos...
+            🔄 Inicializando sistema...
         </div>
 
         <!-- Formulario de Ingreso -->
@@ -170,26 +170,26 @@
             </div>
             <div class="form-row">
                 <button type="button" class="btn-gps" onclick="usarMiGps()">📍 Usar mi GPS en tiempo real</button>
-                <button onclick="buscarYGuardarDireccion()" style="flex: 2;">Guardar Registro con Auto en el Mapa</button>
+                <button type="button" onclick="buscarYGuardarDireccion()" style="flex: 2;">Guardar Registro con Auto en el Mapa</button>
             </div>
         </div>
 
         <div id="map"></div>
 
-        <button class="btn-admin" onclick="toggleAdminPanel()">🔒 Modo Administrador</button>
+        <button type="button" class="btn-admin" onclick="toggleAdminPanel()">🔒 Modo Administrador</button>
 
         <div id="adminSection">
             <h3>Panel de Control - Administrador</h3>
             <div class="login-box" id="loginBox">
                 <input type="password" id="adminPassword" placeholder="Ingrese contraseña de acceso">
-                <button onclick="verificarAdmin()">Entrar</button>
+                <button type="button" onclick="verificarAdmin()">Entrar</button>
             </div>
 
             <div id="adminContent" style="display:none;">
                 <p style="color: green; font-weight: bold;">✔ Sesión de administrador activa</p>
                 
                 <!-- Botón para descargar Excel -->
-                <button class="btn-excel" onclick="descargarExcel()">📥 Descargar Registros en Excel</button>
+                <button type="button" class="btn-excel" onclick="descargarExcel()">📥 Descargar Registros en Excel</button>
 
                 <h4>Listado completo de registros:</h4>
                 <table>
@@ -217,4 +217,252 @@
     
     <!-- Firebase SDK Compat -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
-    <script src="
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+    <script>
+        // 1. INICIALIZAR EL MAPA DE INMEDIATO (Para que nunca falle su visualización)
+        var map = L.map('map').setView([-33.4489, -70.6693], 12);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+            maxZoom: 20,
+            attribution: '© OpenStreetMap contributors | Chile'
+        }).addTo(map);
+
+        var markersGroup = L.layerGroup().addTo(map);
+
+        // Icono personalizado de Auto
+        var carIcon = L.icon({
+            iconUrl: 'https://cdn-icons-png.flaticon.com/512/741/741407.png',
+            iconSize: [35, 35],
+            iconAnchor: [17, 17],
+            popupAnchor: [0, -17]
+        });
+
+        let registrosGlobales = {};
+        let latGpsTemporal = null;
+        let lonGpsTemporal = null;
+        let db = null;
+
+        // 2. CONFIGURACIÓN E INICIALIZACIÓN DE FIREBASE SEGURA
+        try {
+            const firebaseConfig = {
+                databaseURL: "https://mapa-chile-c2b86-default-rtdb.firebaseio.com"
+            };
+            
+            if (!firebase.apps.length) {
+                firebase.initializeApp(firebaseConfig);
+            }
+            db = firebase.database();
+
+            const panelConexion = document.getElementById('estadoConexion');
+            db.ref('.info/connected').on('value', function(snap) {
+                if (snap.val() === true) {
+                    panelConexion.innerHTML = "🟢 Conectado correctamente a la nube. Listo para registrar datos.";
+                    panelConexion.style.background = "#e1f5fe";
+                } else {
+                    panelConexion.innerHTML = "🔴 Estableciendo conexión con Firebase...";
+                    panelConexion.style.background = "#ffebee";
+                }
+            });
+
+            // Escuchar datos en tiempo real
+            db.ref('direcciones').on('value', (snapshot) => {
+                markersGroup.clearLayers();
+                const tabla = document.getElementById('tablaDirecciones');
+                tabla.innerHTML = '';
+                
+                registrosGlobales = snapshot.val() || {};
+                const data = registrosGlobales;
+
+                if (Object.keys(data).length > 0) {
+                    Object.keys(data).forEach(key => {
+                        const item = data[key];
+                        
+                        if (item.lat && item.lon) {
+                            var popupContent = `
+                                <b>🚗 Vehículo / Usuario:</b> ${item.usuario || 'No especificado'}<br>
+                                <b>📝 Nombre:</b> ${item.nombre || 'No especificado'}<br>
+                                <b>🆔 RUT:</b> ${item.rut || 'No especificado'}<br>
+                                <b>📞 Teléfono:</b> ${item.telefono || 'No especificado'}<br>
+                                <b>📍 Dirección:</b> ${item.direccion}
+                            `;
+
+                            var nuevoMarcador = L.marker([item.lat, item.lon], {icon: carIcon})
+                                .bindPopup(popupContent);
+                            markersGroup.addLayer(nuevoMarcador);
+                        }
+
+                        let fechaFormateada = item.fecha ? new Date(item.fecha).toLocaleString() : 'Sin fecha';
+                        tabla.innerHTML += `
+                            <tr>
+                                <td>${item.usuario || '-'}</td>
+                                <td>${item.nombre || '-'}</td>
+                                <td>${item.rut || '-'}</td>
+                                <td>${item.telefono || '-'}</td>
+                                <td>${item.direccion}</td>
+                                <td>${fechaFormateada}</td>
+                                <td><button type="button" class="btn-delete" onclick="eliminarDireccion('${key}')">Eliminar</button></td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    tabla.innerHTML = '<tr><td colspan="7">No hay registros todavía.</td></tr>';
+                }
+            });
+
+        } catch (error) {
+            console.error("Error al conectar con Firebase:", error);
+            document.getElementById('estadoConexion').innerHTML = "⚠️ Error al conectar con la base de datos.";
+        }
+
+        // 3. FUNCIONES DE GPS Y GUARDADO
+        function usarMiGps() {
+            if (!navigator.geolocation) {
+                alert("Tu navegador no soporta geolocalización.");
+                return;
+            }
+
+            alert("Obteniendo tu ubicación GPS actual...");
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    latGpsTemporal = position.coords.latitude;
+                    lonGpsTemporal = position.coords.longitude;
+                    
+                    document.getElementById('addressInput').value = `GPS Actual (${latGpsTemporal.toFixed(5)}, ${lonGpsTemporal.toFixed(5)})`;
+                    map.setView([latGpsTemporal, lonGpsTemporal], 16);
+                    alert("¡Ubicación GPS obtenida con éxito! Ahora completa tus datos y guarda.");
+                },
+                (error) => {
+                    alert("No se pudo obtener la ubicación GPS: " + error.message);
+                },
+                { enableHighAccuracy: true }
+            );
+        }
+
+        function buscarYGuardarDireccion() {
+            if (!db) {
+                alert("La base de datos no está conectada.");
+                return;
+            }
+
+            var usuario = document.getElementById('usuarioInput').value.trim();
+            var nombre = document.getElementById('nombreInput').value.trim();
+            var rut = document.getElementById('rutInput').value.trim();
+            var telefono = document.getElementById('telefonoInput').value.trim();
+            var direccionInput = document.getElementById('addressInput').value.trim();
+
+            if (!usuario || !nombre || !rut || !telefono || !direccionInput) {
+                alert('Por favor completa todos los campos y define una ubicación (escribiendo o usando el GPS)');
+                return;
+            }
+
+            if (latGpsTemporal && lonGpsTemporal && direccionInput.includes("GPS Actual")) {
+                guardarEnFirebase(usuario, nombre, rut, telefono, direccionInput, latGpsTemporal, lonGpsTemporal);
+                latGpsTemporal = null;
+                lonGpsTemporal = null;
+                return;
+            }
+
+            var queryBusqueda = direccionInput.toLowerCase().includes('chile') ? direccionInput : direccionInput + ", Chile";
+            var url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=cl&q=${encodeURIComponent(queryBusqueda)}`;
+
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        var lat = parseFloat(data[0].lat);
+                        var lon = parseFloat(data[0].lon);
+                        guardarEnFirebase(usuario, nombre, rut, telefono, direccionInput, lat, lon);
+                    } else {
+                        alert('No se encontró la dirección dentro de Chile. Intenta usar el botón de GPS o ser más específico.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Ocurrió un error al procesar la dirección de búsqueda.');
+                });
+        }
+
+        function guardarEnFirebase(usuario, nombre, rut, telefono, direccion, lat, lon) {
+            db.ref('direcciones').push({
+                usuario: usuario,
+                nombre: nombre,
+                rut: rut,
+                telefono: telefono,
+                direccion: direccion,
+                lat: lat,
+                lon: lon,
+                fecha: new Date().toISOString()
+            }, (error) => {
+                if (error) {
+                    alert('Error al guardar en la nube: ' + error.message);
+                } else {
+                    alert('¡Vehículo registrado exitosamente en el mapa!');
+                    document.getElementById('usuarioInput').value = '';
+                    document.getElementById('nombreInput').value = '';
+                    document.getElementById('rutInput').value = '';
+                    document.getElementById('telefonoInput').value = '';
+                    document.getElementById('addressInput').value = '';
+                }
+            });
+        }
+
+        function descargarExcel() {
+            if (!registrosGlobales || Object.keys(registrosGlobales).length === 0) {
+                alert("No hay registros para descargar.");
+                return;
+            }
+
+            let csvContent = "\uFEFFUsuario,Nombre,RUT,Teléfono,Dirección,Fecha,Latitud,Longitud\n";
+
+            Object.keys(registrosGlobales).forEach(key => {
+                let item = registrosGlobales[key];
+                let usuario = `"${(item.usuario || '').replace(/"/g, '""')}"`;
+                let nombre = `"${(item.nombre || '').replace(/"/g, '""')}"`;
+                let rut = `"${(item.rut || '').replace(/"/g, '""')}"`;
+                let telefono = `"${(item.telefono || '').replace(/"/g, '""')}"`;
+                let direccion = `"${(item.direccion || '').replace(/"/g, '""')}"`;
+                let fecha = item.fecha ? `"${new Date(item.fecha).toLocaleString()}"` : '""';
+                let lat = item.lat || '';
+                let lon = item.lon || '';
+
+                csvContent += `${usuario},${nombre},${rut},${telefono},${direccion},${fecha},${lat},${lon}\n`;
+            });
+
+            var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            var url = URL.createObjectURL(blob);
+            var link = document.createElement("a");
+            link.setAttribute("href", url);
+            link.setAttribute("download", "registros_autos_chile.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function toggleAdminPanel() {
+            var section = document.getElementById('adminSection');
+            section.style.display = section.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function verificarAdmin() {
+            var pass = document.getElementById('adminPassword').value;
+            var passwordCorrecta = "Fenix2020";
+
+            if (pass === passwordCorrecta) {
+                document.getElementById('loginBox').style.display = 'none';
+                document.getElementById('adminContent').style.display = 'block';
+                document.getElementById('adminPassword').value = '';
+            } else {
+                alert('Contraseña incorrecta');
+            }
+        }
+
+        function eliminarDireccion(id) {
+            if (confirm("¿Estás seguro de eliminar este registro?")) {
+                db.ref('direcciones/' + id).remove()
+                    .catch(error => alert('Error al eliminar'));
+            }
+        }
+    </script>
+</body>
+</html>
