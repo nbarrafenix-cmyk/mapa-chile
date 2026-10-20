@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seguimiento de Autos en Tiempo Real - Chile</title>
+    <title>Registro y Seguimiento de Clientes - Chile</title>
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
@@ -69,6 +69,12 @@
         button:hover {
             background-color: #c0392b;
         }
+        .btn-gps {
+            background-color: #2980b9;
+        }
+        .btn-gps:hover {
+            background-color: #1f618d;
+        }
         .btn-live {
             background-color: #27ae60;
         }
@@ -91,6 +97,15 @@
             background-color: #c0392b;
             padding: 5px 10px;
             font-size: 12px;
+        }
+        .btn-excel {
+            background-color: #27ae60;
+            margin-bottom: 15px;
+            font-size: 14px;
+            padding: 10px 15px;
+        }
+        .btn-excel:hover {
+            background-color: #219653;
         }
         #map {
             width: 100%;
@@ -138,8 +153,8 @@
     <div class="container">
         <div class="header">
             <div>
-                <h2>Seguimiento de Autos en Tiempo Real (Chile)</h2>
-                <p style="color: #666; margin: 5px 0 0 0;">Monitoreo GPS en vivo con actualización automática de movimiento.</p>
+                <h2>Registro y Seguimiento de Clientes (Chile)</h2>
+                <p style="color: #666; margin: 5px 0 0 0;">Gestión de direcciones con monitoreo en tiempo real por vehículo/usuario.</p>
             </div>
             <img src="https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=150" alt="Logo Fénix">
         </div>
@@ -148,20 +163,23 @@
             🔄 Inicializando sistema...
         </div>
 
-        <!-- Panel de Control para el Conductor / Usuario -->
+        <!-- Formulario con la estructura solicitada -->
         <div class="form-group" id="formIngreso">
-            <h3 style="margin-top:0; color:#2c3e50;">Panel del Conductor (Transmisión en Vivo)</h3>
+            <h3 style="margin-top:0; color:#2c3e50;">Formulario de Registro de Cliente</h3>
             <div class="form-row">
-                <input type="text" id="usuarioInput" placeholder="ID de Usuario / Patente (ej: auto_carlos)">
-                <input type="text" id="nombreInput" placeholder="Nombre completo">
+                <input type="text" id="usuarioInput" placeholder="Nombre de usuario (asociado al GPS)">
+                <input type="text" id="nombreInput" placeholder="Nombre cliente">
             </div>
             <div class="form-row">
-                <input type="text" id="rutInput" placeholder="RUT (ej: 12.345.678-9)">
-                <input type="text" id="telefonoInput" placeholder="Teléfono de contacto">
+                <input type="text" id="rutInput" placeholder="Rut cliente (ej: 12.345.678-9)">
+                <input type="text" id="telefonoInput" placeholder="Número cliente (ej: +56912345678)">
             </div>
             <div class="form-row">
-                <button type="button" id="btnIniciar" class="btn-live" onclick="iniciarSeguimientoEnVivo()">🚀 Iniciar Viaje en Vivo (GPS)</button>
-                <button type="button" id="btnDetener" class="btn-stop" onclick="detenerSeguimientoEnVivo()" style="display:none;">🛑 Detener Viaje</button>
+                <input type="text" id="addressInput" placeholder="Dirección cliente (ej: Bandera 120, Santiago)" style="flex: 1;">
+            </div>
+            <div class="form-row">
+                <button type="button" class="btn-gps" onclick="usarMiGps()">📍 Capturar Dirección GPS</button>
+                <button type="button" class="btn-live" onclick="guardarYActivarLive()" style="flex: 2;">🚗 Guardar y Activar Seguimiento en Vivo</button>
             </div>
         </div>
 
@@ -178,15 +196,17 @@
 
             <div id="adminContent" style="display:none;">
                 <p style="color: green; font-weight: bold;">✔ Sesión de administrador activa</p>
-                <h4>Listado de vehículos activos:</h4>
+                <button type="button" class="btn-excel" onclick="descargarExcel()">📥 Descargar Registros en Excel</button>
+
+                <h4>Listado completo de clientes y vehículos:</h4>
                 <table>
                     <thead>
                         <tr>
-                            <th>Usuario / Patente</th>
-                            <th>Nombre</th>
-                            <th>RUT</th>
-                            <th>Teléfono</th>
-                            <th>Última Coordenada GPS</th>
+                            <th>Usuario (GPS)</th>
+                            <th>Nombre Cliente</th>
+                            <th>Rut Cliente</th>
+                            <th>Número Cliente</th>
+                            <th>Dirección Cliente</th>
                             <th>Acción</th>
                         </tr>
                     </thead>
@@ -223,7 +243,7 @@
             popupAnchor: [0, -17]
         });
 
-        let watchId = null; // ID para controlar el rastreo GPS continuo del navegador
+        let watchId = null;
         let db = null;
         let registrosGlobales = {};
 
@@ -240,7 +260,7 @@
             const panelConexion = document.getElementById('estadoConexion');
             db.ref('.info/connected').on('value', function(snap) {
                 if (snap.val() === true) {
-                    panelConexion.innerHTML = "🟢 Conectado a la nube. Escuchando movimientos en tiempo real.";
+                    panelConexion.innerHTML = "🟢 Conectado a la nube. Sincronización en tiempo real activa.";
                     panelConexion.style.background = "#e1f5fe";
                 } else {
                     panelConexion.innerHTML = "🔴 Conectando con Firebase...";
@@ -248,8 +268,8 @@
                 }
             });
 
-            // Escuchar cambios de posición de TODOS los autos en tiempo real
-            db.ref('vehiculos_activos').on('value', (snapshot) => {
+            // Escuchar cambios en los registros de clientes
+            db.ref('clientes_registrados').on('value', (snapshot) => {
                 markersGroup.clearLayers();
                 const tabla = document.getElementById('tablaDirecciones');
                 tabla.innerHTML = '';
@@ -263,10 +283,11 @@
                         
                         if (item.lat && item.lon) {
                             var popupContent = `
-                                <b>🚗 Vehículo:</b> ${item.usuario || 'N/A'}<br>
-                                <b>📝 Conductor:</b> ${item.nombre || 'N/A'}<br>
-                                <b>📞 Teléfono:</b> ${item.telefono || 'N/A'}<br>
-                                <b>🕒 Actualizado:</b> ${new Date(item.fecha).toLocaleTimeString()}
+                                <b>👤 Usuario:</b> ${item.usuario || 'N/A'}<br>
+                                <b>📝 Nombre:</b> ${item.nombreCliente || 'N/A'}<br>
+                                <b>🆔 RUT:</b> ${item.rutCliente || 'N/A'}<br>
+                                <b>📞 Teléfono:</b> ${item.numeroCliente || 'N/A'}<br>
+                                <b>📍 Dirección Base:</b> ${item.direccionCliente}
                             `;
 
                             var nuevoMarcador = L.marker([item.lat, item.lon], {icon: carIcon})
@@ -277,16 +298,16 @@
                         tabla.innerHTML += `
                             <tr>
                                 <td>${item.usuario || '-'}</td>
-                                <td>${item.nombre || '-'}</td>
-                                <td>${item.rut || '-'}</td>
-                                <td>${item.telefono || '-'}</td>
-                                <td>${item.lat ? item.lat.toFixed(4) + ', ' + item.lon.toFixed(4) : '-'}</td>
-                                <td><button type="button" class="btn-delete" onclick="eliminarVehiculo('${key}')">Eliminar</button></td>
+                                <td>${item.nombreCliente || '-'}</td>
+                                <td>${item.rutCliente || '-'}</td>
+                                <td>${item.numeroCliente || '-'}</td>
+                                <td>${item.direccionCliente}</td>
+                                <td><button type="button" class="btn-delete" onclick="eliminarRegistro('${key}')">Eliminar</button></td>
                             </tr>
                         `;
                     });
                 } else {
-                    tabla.innerHTML = '<tr><td colspan="6">No hay vehículos en movimiento en este momento.</td></tr>';
+                    tabla.innerHTML = '<tr><td colspan="6">No hay registros todavía.</td></tr>';
                 }
             });
 
@@ -294,75 +315,93 @@
             console.error("Error Firebase:", error);
         }
 
-        // FUNCIÓN CLAVE: RASTREO EN VIVO (Movimiento continuo)
-        function iniciarSeguimientoEnVivo() {
-            var usuario = document.getElementById('usuarioInput').value.trim();
-            var nombre = document.getElementById('nombreInput').value.trim();
-            var rut = document.getElementById('rutInput').value.trim();
-            var telefono = document.getElementById('telefonoInput').value.trim();
-
-            if (!usuario || !nombre || !rut || !telefono) {
-                alert('Por favor completa todos tus datos personales antes de iniciar el viaje.');
-                return;
-            }
-
+        // Función para rellenar la dirección con el GPS actual
+        function usarMiGps() {
             if (!navigator.geolocation) {
-                alert("Tu dispositivo no soporta geolocalización en tiempo real.");
+                alert("Tu navegador no soporta geolocalización.");
                 return;
             }
-
-            alert("Iniciando transmisión GPS en tiempo real. ¡El mapa actualizará tu posición mientras te muevas!");
-
-            document.getElementById('btnIniciar').style.display = 'none';
-            document.getElementById('btnDetener').style.display = 'inline-block';
-
-            // Usamos watchPosition en lugar de getCurrentPosition para rastrear el movimiento constante
-            watchId = navigator.geolocation.watchPosition(
+            navigator.geolocation.getCurrentPosition(
                 (position) => {
-                    var lat = position.coords.latitude;
-                    var lon = position.coords.longitude;
-
-                    // Actualizamos o creamos la posición en Firebase bajo el nombre del usuario
-                    db.ref('vehiculos_activos/' + usuario).set({
-                        usuario: usuario,
-                        nombre: nombre,
-                        rut: rut,
-                        telefono: telefono,
-                        lat: lat,
-                        lon: lon,
-                        fecha: new Date().toISOString()
-                    });
-
-                    // Centrar el mapa automáticamente en el auto del usuario que va conduciendo
+                    let lat = position.coords.latitude;
+                    let lon = position.coords.longitude;
+                    document.getElementById('addressInput').value = `GPS Actual (${lat.toFixed(5)}, ${lon.toFixed(5)})`;
                     map.setView([lat, lon], 16);
+                    alert("¡Ubicación GPS capturada con éxito en la dirección!");
                 },
-                (error) => {
-                    alert("Error de GPS: " + error.message);
-                },
-                {
-                    enableHighAccuracy: true,
-                    maximumAge: 0,
-                    timeout: 10000
-                }
+                (error) => { alert("Error al obtener GPS: " + error.message); },
+                { enableHighAccuracy: true }
             );
         }
 
-        // FUNCIÓN PARA DETENER EL VIAJE
-        function detenerSeguimientoEnVivo() {
-            if (watchId !== null) {
-                navigator.geolocation.clearWatch(watchId);
-                watchId = null;
-            }
-
+        // Guardar la información completa del cliente y activar el rastreo en vivo por su usuario
+        function guardarYActivarLive() {
             var usuario = document.getElementById('usuarioInput').value.trim();
-            if (usuario) {
-                // Opcional: eliminar o dejar el registro final en la base de datos
-                db.ref('vehiculos_activos/' + usuario).remove();
+            var nombreCliente = document.getElementById('nombreInput').value.trim();
+            var rutCliente = document.getElementById('rutInput').value.trim();
+            var numeroCliente = document.getElementById('telefonoInput').value.trim();
+            var direccionCliente = document.getElementById('addressInput').value.trim();
+
+            if (!usuario || !nombreCliente || !rutCliente || !numeroCliente || !direccionCliente) {
+                alert('Por favor completa todos los campos: Usuario, Nombre, RUT, Número y Dirección.');
+                return;
             }
 
-            document.getElementById('btnIniciar').style.display = 'inline-block';
-            document.getElementById('btnDetener').style.display = 'none';
-            alert("Viaje finalizado.");
+            // Identificar coordenadas iniciales (por texto o por GPS capturado)
+            if (direccionCliente.includes("GPS Actual")) {
+                navigator.geolocation.getCurrentPosition((pos) => {
+                    grabarEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, pos.coords.latitude, pos.coords.longitude, true);
+                });
+            } else {
+                var queryBusqueda = direccionCliente.toLowerCase().includes('chile') ? direccionCliente : direccionCliente + ", Chile";
+                var url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=cl&q=${encodeURIComponent(queryBusqueda)}`;
+
+                fetch(url)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.length > 0) {
+                            var lat = parseFloat(data[0].lat);
+                            var lon = parseFloat(data[0].lon);
+                            grabarEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, lat, lon, true);
+                        } else {
+                            alert('No se encontró la dirección en Chile. Intenta ser más específico o usa el botón de GPS.');
+                        }
+                    })
+                    .catch(error => alert('Error al procesar la dirección.'));
+            }
+        }
+
+        function grabarEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, lat, lon, activarRastreo) {
+            // Usamos el nombre de usuario como clave única para mantener la ficha guardada
+            db.ref('clientes_registrados/' + usuario).set({
+                usuario: usuario,
+                nombreCliente: nombreCliente,
+                rutCliente: rutCliente,
+                numeroCliente: numeroCliente,
+                direccionCliente: direccionCliente,
+                lat: lat,
+                lon: lon,
+                fecha: new Date().toISOString()
+            }, (error) => {
+                if (error) {
+                    alert('Error al guardar: ' + error.message);
+                } else {
+                    alert('¡Registro guardado correctamente! El mapa mostrará la posición.');
+                    
+                    if (activarRastreo && navigator.geolocation) {
+                        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+                        
+                        // Inicia el movimiento en tiempo real continuo solo para este usuario
+                        watchId = navigator.geolocation.watchPosition((pos) => {
+                            db.ref('clientes_registrados/' + usuario).update({
+                                lat: pos.coords.latitude,
+                                lon: pos.coords.longitude
+                            });
+                            map.setView([pos.coords.latitude, pos.coords.longitude], 16);
+                        }, null, { enableHighAccuracy: true });
+                    }
+                }
+            });
         }
 
         function toggleAdminPanel() {
@@ -381,10 +420,27 @@
             }
         }
 
-        function eliminarVehiculo(id) {
-            if (confirm("¿Estás seguro de eliminar este vehículo del sistema?")) {
-                db.ref('vehiculos_activos/' + id).remove();
+        function eliminarRegistro(id) {
+            if (confirm("¿Estás seguro de eliminar este cliente?")) {
+                db.ref('clientes_registrados/' + id).remove();
             }
+        }
+
+        function descargarExcel() {
+            if (!registrosGlobales || Object.keys(registrosGlobales).length === 0) {
+                alert("No hay registros.");
+                return;
+            }
+            let csv = "\uFEFFUsuario,Nombre Cliente,Rut Cliente,Número Cliente,Dirección Cliente\n";
+            Object.keys(registrosGlobales).forEach(k => {
+                let i = registrosGlobales[k];
+                csv += `"${i.usuario}","${i.nombreCliente}","${i.rutCliente}","${i.numeroCliente}","${i.direccionCliente}"\n`;
+            });
+            var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            var link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "registros_clientes.csv";
+            link.click();
         }
     </script>
 </body>
