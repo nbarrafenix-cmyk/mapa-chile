@@ -73,6 +73,7 @@
         .btn-gps:hover { background-color: #1f618d; }
         .btn-live { background-color: #27ae60; }
         .btn-live:hover { background-color: #219653; }
+        .btn-stop { background-color: #c0392b; }
         .btn-admin {
             background-color: #2c3e50;
             margin-bottom: 15px;
@@ -83,6 +84,11 @@
         .btn-delete { background-color: #c0392b; padding: 5px 10px; font-size: 12px; }
         .btn-excel { background-color: #27ae60; margin-bottom: 15px; font-size: 14px; padding: 10px 15px; }
         .btn-excel:hover { background-color: #219653; }
+        
+        #mapContainer {
+            display: none; /* Oculto por defecto para usuarios normales */
+            margin-top: 20px;
+        }
         #map {
             width: 100%;
             height: 450px;
@@ -97,8 +103,16 @@
             font-size: 14px;
             color: #2c3e50;
         }
-        #adminSection {
+        .success-box {
             display: none;
+            background: #e1f5fe;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            margin-bottom: 20px;
+            border: 1px solid #b3e5fc;
+        }
+        #adminSection {
             border-top: 2px solid #eee;
             margin-top: 20px;
             padding-top: 20px;
@@ -115,7 +129,7 @@
         <div class="header">
             <div>
                 <h2>Registro y Seguimiento de Clientes (Chile)</h2>
-                <p style="color: #666; margin: 5px 0 0 0;">Gestión de direcciones con monitoreo en tiempo real por vehículo/usuario.</p>
+                <p style="color: #666; margin: 5px 0 0 0;">Gestión de direcciones con monitoreo exclusivo para administrador.</p>
             </div>
             <img src="https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=150" alt="Logo Fénix">
         </div>
@@ -124,10 +138,11 @@
             🔄 Inicializando sistema...
         </div>
 
+        <!-- Vista del Usuario / Repartidor para enviar su GPS -->
         <div class="form-group" id="formIngreso">
-            <h3 style="margin-top:0; color:#2c3e50;">Formulario de Registro de Cliente</h3>
+            <h3 style="margin-top:0; color:#2c3e50;">Formulario de Registro de Cliente / Conductor</h3>
             <div class="form-row">
-                <input type="text" id="usuarioInput" placeholder="Nombre de usuario (asociado al GPS)">
+                <input type="text" id="usuarioInput" placeholder="Nombre de usuario (ej: chofer1)">
                 <input type="text" id="nombreInput" placeholder="Nombre cliente">
             </div>
             <div class="form-row">
@@ -143,20 +158,30 @@
             </div>
         </div>
 
-        <div id="map"></div>
+        <!-- Mensaje de confirmación cuando el usuario activa su GPS con éxito -->
+        <div class="success-box" id="mensajeActivo">
+            <h3 style="color: #27ae60; margin: 0 0 10px 0;">✅ ¡Seguimiento en vivo activo!</h3>
+            <p style="margin: 0; color: #333;">Tu ubicación GPS se está transmitiendo en tiempo real al administrador. Puedes dejar esta ventana abierta mientras te desplazas.</p>
+            <button type="button" class="btn-stop" onclick="detenerSeguimiento()" style="margin-top: 15px;">🛑 Detener Seguimiento</button>
+        </div>
 
-        <button type="button" class="btn-admin" onclick="toggleAdminPanel()">🔒 Modo Administrador</button>
-
+        <!-- SECCIÓN DE ADMINISTRADOR -->
         <div id="adminSection">
             <h3>Panel de Control - Administrador</h3>
             <div class="login-box" id="loginBox">
-                <input type="password" id="adminPassword" placeholder="Ingrese contraseña de acceso">
+                <input type="password" id="adminPassword" placeholder="Ingrese contraseña de acceso (Ej: Fenix2020)">
                 <button type="button" onclick="verificarAdmin()">Entrar</button>
             </div>
 
+            <!-- Contenido exclusivo del Administrador (Mapa y Tabla) -->
             <div id="adminContent" style="display:none;">
-                <p style="color: green; font-weight: bold;">✔ Sesión de administrador activa</p>
+                <p style="color: green; font-weight: bold;">✔ Sesión de administrador activa (Acceso a Mapa y Gestión)</p>
                 <button type="button" class="btn-excel" onclick="descargarExcel()">📥 Descargar Registros en Excel</button>
+
+                <div id="mapContainer">
+                    <h4>Mapa de Monitoreo en Tiempo Real</h4>
+                    <div id="map"></div>
+                </div>
 
                 <h4>Listado completo de clientes y vehículos:</h4>
                 <table>
@@ -186,26 +211,13 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 
     <script>
-        // Inicializar Mapa
-        var map = L.map('map').setView([-33.4489, -70.6693], 12);
-
-        L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
-            maxZoom: 20,
-            attribution: '© OpenStreetMap contributors | Chile'
-        }).addTo(map);
-
-        var markersMap = {}; // Guardar referencia individual de marcadores por usuario
-
-        var carIcon = L.icon({
-            iconUrl: 'https://cdn-icons-png.flaticon.com/512/741/741407.png',
-            iconSize: [35, 35],
-            iconAnchor: [17, 17],
-            popupAnchor: [0, -17]
-        });
-
+        var map = null;
+        var markersMap = {};
+        var carIcon = null;
         let watchId = null;
         let db = null;
         let registrosGlobales = {};
+        let isAdmin = false;
 
         try {
             const firebaseConfig = {
@@ -220,69 +232,11 @@
             const panelConexion = document.getElementById('estadoConexion');
             db.ref('.info/connected').on('value', function(snap) {
                 if (snap.val() === true) {
-                    panelConexion.innerHTML = "🟢 Conectado a la nube. Sincronización en tiempo real activa.";
+                    panelConexion.innerHTML = "🟢 Conectado a la nube.";
                     panelConexion.style.background = "#e1f5fe";
                 } else {
                     panelConexion.innerHTML = "🔴 Conectando con Firebase...";
                     panelConexion.style.background = "#ffebee";
-                }
-            });
-
-            // Escuchar cambios en la base de datos en tiempo real
-            db.ref('clientes_registrados').on('value', (snapshot) => {
-                const tabla = document.getElementById('tablaDirecciones');
-                tabla.innerHTML = '';
-
-                registrosGlobales = snapshot.val() || {};
-                const data = registrosGlobales;
-
-                // Limpiar marcadores que ya no existen en Firebase
-                Object.keys(markersMap).forEach(userKey => {
-                    if (!data[userKey]) {
-                        map.removeLayer(markersMap[userKey]);
-                        delete markersMap[userKey];
-                    }
-                });
-
-                if (Object.keys(data).length > 0) {
-                    Object.keys(data).forEach(key => {
-                        const item = data[key];
-
-                        if (item.lat && item.lon) {
-                            var popupContent = `
-                                <b>👤 Usuario:</b> ${item.usuario || 'N/A'}<br>
-                                <b>📝 Nombre:</b> ${item.nombreCliente || 'N/A'}<br>
-                                <b>🆔 RUT:</b> ${item.rutCliente || 'N/A'}<br>
-                                <b>📞 Teléfono:</b> ${item.numeroCliente || 'N/A'}<br>
-                                <b>📍 Dirección Base:</b> ${item.direccionCliente}
-                            `;
-
-                            // Si el marcador ya existe, solo movemos las coordenadas suavemente
-                            if (markersMap[key]) {
-                                markersMap[key].setLatLng([item.lat, item.lon]);
-                                markersMap[key].setPopupContent(popupContent);
-                            } else {
-                                // Si es un nuevo usuario, creamos el marcador
-                                var nuevoMarcador = L.marker([item.lat, item.lon], {icon: carIcon})
-                                    .bindPopup(popupContent)
-                                    .addTo(map);
-                                markersMap[key] = nuevoMarcador;
-                            }
-                        }
-
-                        tabla.innerHTML += `
-                            <tr>
-                                <td>${item.usuario || '-'}</td>
-                                <td>${item.nombreCliente || '-'}</td>
-                                <td>${item.rutCliente || '-'}</td>
-                                <td>${item.numeroCliente || '-'}</td>
-                                <td>${item.direccionCliente}</td>
-                                <td><button type="button" class="btn-delete" onclick="eliminarRegistro('${key}')">Eliminar</button></td>
-                            </tr>
-                        `;
-                    });
-                } else {
-                    tabla.innerHTML = '<tr><td colspan="6">No hay registros todavía.</td></tr>';
                 }
             });
 
@@ -301,7 +255,6 @@
                     let lat = position.coords.latitude;
                     let lon = position.coords.longitude;
                     document.getElementById('addressInput').value = `GPS Actual (${lat.toFixed(5)}, ${lon.toFixed(5)})`;
-                    map.setView([lat, lon], 16);
                     alert("¡Ubicación GPS capturada con éxito!");
                 },
                 (error) => { alert("Error al obtener GPS: " + error.message); },
@@ -309,7 +262,7 @@
             );
         }
 
-        // Guardar la información y activar rastreo
+        // Guardar la información y activar rastreo del usuario común
         function guardarYActivarLive() {
             var usuario = document.getElementById('usuarioInput').value.trim();
             var nombreCliente = document.getElementById('nombreInput').value.trim();
@@ -327,9 +280,7 @@
                     (pos) => {
                         grabarEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, pos.coords.latitude, pos.coords.longitude, true);
                     },
-                    (err) => {
-                        alert("Error al obtener posición actual: " + err.message);
-                    },
+                    (err) => { alert("Error al obtener posición actual: " + err.message); },
                     { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
                 );
             } else {
@@ -365,53 +316,127 @@
                 if (error) {
                     alert('Error al guardar: ' + error.message);
                 } else {
-                    alert('¡Registro guardado correctamente! Iniciando rastreo en vivo.');
+                    // Ocultar formulario de ingreso y mostrar mensaje de éxito en vivo al usuario
+                    document.getElementById('formIngreso').style.display = 'none';
+                    document.getElementById('mensajeActivo').style.display = 'block';
 
                     if (activarRastreo && navigator.geolocation) {
                         if (watchId !== null) navigator.geolocation.clearWatch(watchId);
 
-                        // Inicia el monitoreo continuo de ubicación
+                        // Inicia el monitoreo continuo enviando ubicación a Firebase
                         watchId = navigator.geolocation.watchPosition(
                             (pos) => {
-                                var newLat = pos.coords.latitude;
-                                var newLon = pos.coords.longitude;
-
-                                // Actualizar coordenadas en Firebase
                                 db.ref('clientes_registrados/' + usuario).update({
-                                    lat: newLat,
-                                    lon: newLon
+                                    lat: pos.coords.latitude,
+                                    lon: pos.coords.longitude
                                 });
-
-                                map.setView([newLat, newLon], 16);
                             },
-                            (error) => {
-                                console.warn("Error en seguimiento GPS:", error.message);
-                            },
-                            {
-                                enableHighAccuracy: true,
-                                timeout: 15000,
-                                maximumAge: 0
-                            }
+                            (error) => { console.warn("Error en seguimiento GPS:", error.message); },
+                            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
                         );
                     }
                 }
             });
         }
 
-        function toggleAdminPanel() {
-            var section = document.getElementById('adminSection');
-            section.style.display = section.style.display === 'none' ? 'block' : 'none';
+        function detenerSeguimiento() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            document.getElementById('mensajeActivo').style.display = 'none';
+            document.getElementById('formIngreso').style.display = 'flex';
+            alert("Has detenido el envío de ubicación en vivo.");
         }
 
         function verificarAdmin() {
             var pass = document.getElementById('adminPassword').value;
             if (pass === "Fenix2020") {
+                isAdmin = true;
                 document.getElementById('loginBox').style.display = 'none';
                 document.getElementById('adminContent').style.display = 'block';
                 document.getElementById('adminPassword').value = '';
+                
+                // Inicializar mapa solo cuando el admin ingresa con éxito
+                inicializarMapaAdmin();
             } else {
                 alert('Contraseña incorrecta');
             }
+        }
+
+        function inicializarMapaAdmin() {
+            document.getElementById('mapContainer').style.display = 'block';
+            
+            if (!map) {
+                map = L.map('map').setView([-33.4489, -70.6693], 12);
+                L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+                    maxZoom: 20,
+                    attribution: '© OpenStreetMap contributors | Chile'
+                }).addTo(map);
+
+                carIcon = L.icon({
+                    iconUrl: 'https://cdn-icons-png.flaticon.com/512/741/741407.png',
+                    iconSize: [35, 35],
+                    iconAnchor: [17, 17],
+                    popupAnchor: [0, -17]
+                });
+            }
+
+            // Activar escucha de Firebase exclusivamente para el Administrador
+            db.ref('clientes_registrados').on('value', (snapshot) => {
+                const tabla = document.getElementById('tablaDirecciones');
+                tabla.innerHTML = '';
+
+                registrosGlobales = snapshot.val() || {};
+                const data = registrosGlobales;
+
+                // Limpiar marcadores del mapa que ya no existen
+                Object.keys(markersMap).forEach(userKey => {
+                    if (!data[userKey]) {
+                        map.removeLayer(markersMap[userKey]);
+                        delete markersMap[userKey];
+                    }
+                });
+
+                if (Object.keys(data).length > 0) {
+                    Object.keys(data).forEach(key => {
+                        const item = data[key];
+
+                        if (item.lat && item.lon) {
+                            var popupContent = `
+                                <b>👤 Usuario:</b> ${item.usuario || 'N/A'}<br>
+                                <b>📝 Nombre:</b> ${item.nombreCliente || 'N/A'}<br>
+                                <b>🆔 RUT:</b> ${item.rutCliente || 'N/A'}<br>
+                                <b>📞 Teléfono:</b> ${item.numeroCliente || 'N/A'}<br>
+                                <b>📍 Dirección Base:</b> ${item.direccionCliente}
+                            `;
+
+                            if (markersMap[key]) {
+                                markersMap[key].setLatLng([item.lat, item.lon]);
+                                markersMap[key].setPopupContent(popupContent);
+                            } else {
+                                var nuevoMarcador = L.marker([item.lat, item.lon], {icon: carIcon})
+                                    .bindPopup(popupContent)
+                                    .addTo(map);
+                                markersMap[key] = nuevoMarcador;
+                            }
+                        }
+
+                        tabla.innerHTML += `
+                            <tr>
+                                <td>${item.usuario || '-'}</td>
+                                <td>${item.nombreCliente || '-'}</td>
+                                <td>${item.rutCliente || '-'}</td>
+                                <td>${item.numeroCliente || '-'}</td>
+                                <td>${item.direccionCliente}</td>
+                                <td><button type="button" class="btn-delete" onclick="eliminarRegistro('${key}')">Eliminar</button></td>
+                            </tr>
+                        `;
+                    });
+                } else {
+                    tabla.innerHTML = '<tr><td colspan="6">No hay registros todavía.</td></tr>';
+                }
+            });
         }
 
         function eliminarRegistro(id) {
