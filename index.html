@@ -50,13 +50,14 @@
             gap: 10px;
             flex-wrap: wrap;
         }
-        input[type="text"], input[type="password"] {
+        input[type="text"], input[type="password"], select {
             flex: 1;
             min-width: 200px;
             padding: 10px;
             border: 1px solid #ccc;
             border-radius: 4px;
             font-size: 15px;
+            background-color: white;
         }
         button {
             padding: 12px 20px;
@@ -130,7 +131,7 @@
         <div class="header">
             <div>
                 <h2>Registro y Seguimiento de Clientes (Chile)</h2>
-                <p style="color: #666; margin: 5px 0 0 0;">Gestión de múltiples ventas y monitoreo GPS en tiempo real.</p>
+                <p style="color: #666; margin: 5px 0 0 0;">Gestión de múltiples ventas, interés de servicio y GPS.</p>
             </div>
             <img src="https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=150" alt="Logo Fénix">
         </div>
@@ -147,7 +148,7 @@
             <button type="button" class="btn-stop" onclick="detenerSeguimiento()">🛑 Detener Seguimiento y Salir</button>
         </div>
 
-        <!-- Formulario de Registro de Venta/Cliente -->
+        <!-- Formulario de Registro de Venta/Cliente con Opción de Servicio -->
         <div class="form-group" id="formIngreso">
             <h3 style="margin-top:0; color:#2c3e50;">Formulario de Registro de Venta</h3>
             <div class="form-row">
@@ -159,7 +160,12 @@
                 <input type="text" id="telefonoInput" placeholder="Número cliente (ej: +56912345678)">
             </div>
             <div class="form-row">
-                <input type="text" id="addressInput" placeholder="Dirección cliente (ej: Bandera 120, Santiago)" style="flex: 1;">
+                <input type="text" id="addressInput" placeholder="Dirección cliente (ej: Bandera 120, Santiago)" style="flex: 2;">
+                <select id="quiereServicioInput" style="flex: 1;">
+                    <option value="" disabled selected>¿Cliente quiere servicio?</option>
+                    <option value="Sí">Sí</option>
+                    <option value="No">No</option>
+                </select>
             </div>
             <div class="form-row">
                 <button type="button" class="btn-gps" onclick="usarMiGps()">📍 Capturar Dirección GPS</button>
@@ -193,11 +199,12 @@
                             <th>Rut Cliente</th>
                             <th>Número Cliente</th>
                             <th>Dirección Cliente</th>
+                            <th>¿Quiere Servicio?</th>
                             <th>Acción</th>
                         </tr>
                     </thead>
                     <tbody id="tablaDirecciones">
-                        <tr><td colspan="6">Cargando registros...</td></tr>
+                        <tr><td colspan="7">Cargando registros...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -268,9 +275,10 @@
             var rutCliente = document.getElementById('rutInput').value.trim();
             var numeroCliente = document.getElementById('telefonoInput').value.trim();
             var direccionCliente = document.getElementById('addressInput').value.trim();
+            var quiereServicio = document.getElementById('quiereServicioInput').value;
 
-            if (!usuario || !nombreCliente || !rutCliente || !numeroCliente || !direccionCliente) {
-                alert('Por favor completa todos los campos: Usuario, Nombre, RUT, Número y Dirección.');
+            if (!usuario || !nombreCliente || !rutCliente || !numeroCliente || !direccionCliente || !quiereServicio) {
+                alert('Por favor completa todos los campos, incluyendo si el cliente quiere el servicio.');
                 return;
             }
 
@@ -279,7 +287,7 @@
             if (direccionCliente.includes("GPS Actual")) {
                 navigator.geolocation.getCurrentPosition(
                     (pos) => {
-                        grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, pos.coords.latitude, pos.coords.longitude);
+                        grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, quiereServicio, pos.coords.latitude, pos.coords.longitude);
                     },
                     (err) => { alert("Error al obtener posición actual: " + err.message); },
                     { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -294,7 +302,7 @@
                         if (data.length > 0) {
                             var lat = parseFloat(data[0].lat);
                             var lon = parseFloat(data[0].lon);
-                            grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, lat, lon);
+                            grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, quiereServicio, lat, lon);
                         } else {
                             alert('No se encontró la dirección en Chile. Intenta ser más específico o usa el botón de GPS.');
                         }
@@ -303,8 +311,7 @@
             }
         }
 
-        function grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, lat, lon) {
-            // Generamos un ID único por cada venta/cliente para permitir múltiples registros por usuario
+        function grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, quiereServicio, lat, lon) {
             var ventaId = db.ref('clientes_registrados').push().key;
 
             db.ref('clientes_registrados/' + ventaId).set({
@@ -313,6 +320,7 @@
                 rutCliente: rutCliente,
                 numeroCliente: numeroCliente,
                 direccionCliente: direccionCliente,
+                quiereServicio: quiereServicio,
                 lat: lat,
                 lon: lon,
                 fecha: new Date().toISOString()
@@ -322,19 +330,13 @@
                 } else {
                     alert('¡Venta guardada con éxito!');
 
-                    // Mostrar panel de estado activo y bloquear temporalmente el formulario actual
                     document.getElementById('formIngreso').style.display = 'none';
                     document.getElementById('panelEstadoUsuario').style.display = 'block';
                     document.getElementById('infoUsuarioActivo').innerText = `Usuario activo: ${usuario} (Transmitiendo GPS en vivo)`;
 
-                    // Iniciar rastreo continuo si no está activo ya
                     if (watchId === null && navigator.geolocation) {
                         watchId = navigator.geolocation.watchPosition(
-                            (pos) => {
-                                // Opcional: Actualizar la última posición global del usuario en cada movimiento si se requiere, 
-                                // pero aquí guardamos cada venta con su ubicación de origen. 
-                                // El watchPosition asegura que el navegador mantenga el GPS activo para el usuario.
-                            },
+                            (pos) => {},
                             (error) => { console.warn("Error en seguimiento GPS:", error.message); },
                             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
                         );
@@ -344,7 +346,6 @@
         }
 
         function agregarOtraVenta() {
-            // Ocultar panel de estado y volver a mostrar el formulario limpiando los campos del cliente (mantiene el usuario)
             document.getElementById('panelEstadoUsuario').style.display = 'none';
             document.getElementById('formIngreso').style.display = 'flex';
 
@@ -352,6 +353,7 @@
             document.getElementById('rutInput').value = '';
             document.getElementById('telefonoInput').value = '';
             document.getElementById('addressInput').value = '';
+            document.getElementById('quiereServicioInput').selectedIndex = 0;
         }
 
         function detenerSeguimiento() {
@@ -420,7 +422,8 @@
                                 <b>📝 Cliente:</b> ${item.nombreCliente || 'N/A'}<br>
                                 <b>🆔 RUT:</b> ${item.rutCliente || 'N/A'}<br>
                                 <b>📞 Teléfono:</b> ${item.numeroCliente || 'N/A'}<br>
-                                <b>📍 Dirección:</b> ${item.direccionCliente}
+                                <b>📍 Dirección:</b> ${item.direccionCliente}<br>
+                                <b>✅ ¿Quiere Servicio?:</b> ${item.quiereServicio || 'N/A'}
                             `;
 
                             if (markersMap[key]) {
@@ -441,12 +444,13 @@
                                 <td>${item.rutCliente || '-'}</td>
                                 <td>${item.numeroCliente || '-'}</td>
                                 <td>${item.direccionCliente}</td>
+                                <td><b>${item.quiereServicio || '-'}</b></td>
                                 <td><button type="button" class="btn-delete" onclick="eliminarRegistro('${key}')">Eliminar</button></td>
                             </tr>
                         `;
                     });
                 } else {
-                    tabla.innerHTML = '<tr><td colspan="6">No hay registros todavía.</td></tr>';
+                    tabla.innerHTML = '<tr><td colspan="7">No hay registros todavía.</td></tr>';
                 }
             });
         }
@@ -462,10 +466,10 @@
                 alert("No hay registros.");
                 return;
             }
-            let csv = "\uFEFFUsuario,Nombre Cliente,Rut Cliente,Número Cliente,Dirección Cliente\n";
+            let csv = "\uFEFFUsuario,Nombre Cliente,Rut Cliente,Número Cliente,Dirección Cliente,¿Quiere Servicio?\n";
             Object.keys(registrosGlobales).forEach(k => {
                 let i = registrosGlobales[k];
-                csv += `"${i.usuario}","${i.nombreCliente}","${i.rutCliente}","${i.numeroCliente}","${i.direccionCliente}"\n`;
+                csv += `"${i.usuario}","${i.nombreCliente}","${i.rutCliente}","${i.numeroCliente}","${i.direccionCliente}","${i.quiereServicio}"\n`;
             });
             var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             var link = document.createElement("a");
