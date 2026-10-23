@@ -48,9 +48,11 @@
         .form-row {
             display: flex;
             gap: 10px;
+            flex-wrap: wrap;
         }
         input[type="text"], input[type="password"] {
             flex: 1;
+            min-width: 200px;
             padding: 10px;
             border: 1px solid #ccc;
             border-radius: 4px;
@@ -66,47 +68,21 @@
             cursor: pointer;
             font-weight: bold;
         }
-        button:hover {
-            background-color: #c0392b;
-        }
-        .btn-gps {
-            background-color: #2980b9;
-        }
-        .btn-gps:hover {
-            background-color: #1f618d;
-        }
-        .btn-live {
-            background-color: #27ae60;
-        }
-        .btn-live:hover {
-            background-color: #219653;
-        }
-        .btn-stop {
-            background-color: #c0392b;
-        }
+        button:hover { background-color: #c0392b; }
+        .btn-gps { background-color: #2980b9; }
+        .btn-gps:hover { background-color: #1f618d; }
+        .btn-live { background-color: #27ae60; }
+        .btn-live:hover { background-color: #219653; }
         .btn-admin {
             background-color: #2c3e50;
             margin-bottom: 15px;
             font-size: 14px;
             padding: 10px 15px;
         }
-        .btn-admin:hover {
-            background-color: #1a252f;
-        }
-        .btn-delete {
-            background-color: #c0392b;
-            padding: 5px 10px;
-            font-size: 12px;
-        }
-        .btn-excel {
-            background-color: #27ae60;
-            margin-bottom: 15px;
-            font-size: 14px;
-            padding: 10px 15px;
-        }
-        .btn-excel:hover {
-            background-color: #219653;
-        }
+        .btn-admin:hover { background-color: #1a252f; }
+        .btn-delete { background-color: #c0392b; padding: 5px 10px; font-size: 12px; }
+        .btn-excel { background-color: #27ae60; margin-bottom: 15px; font-size: 14px; padding: 10px 15px; }
+        .btn-excel:hover { background-color: #219653; }
         #map {
             width: 100%;
             height: 450px;
@@ -127,25 +103,10 @@
             margin-top: 20px;
             padding-top: 20px;
         }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 10px;
-            text-align: left;
-            font-size: 13px;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-        .login-box {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 13px; }
+        th { background-color: #f2f2f2; }
+        .login-box { display: flex; gap: 10px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
@@ -163,7 +124,6 @@
             🔄 Inicializando sistema...
         </div>
 
-        <!-- Formulario con la estructura solicitada -->
         <div class="form-group" id="formIngreso">
             <h3 style="margin-top:0; color:#2c3e50;">Formulario de Registro de Cliente</h3>
             <div class="form-row">
@@ -220,7 +180,7 @@
 
     <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
+
     <!-- Firebase SDK Compat -->
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
@@ -234,7 +194,7 @@
             attribution: '© OpenStreetMap contributors | Chile'
         }).addTo(map);
 
-        var markersGroup = L.layerGroup().addTo(map);
+        var markersMap = {}; // Guardar referencia individual de marcadores por usuario
 
         var carIcon = L.icon({
             iconUrl: 'https://cdn-icons-png.flaticon.com/512/741/741407.png',
@@ -251,7 +211,7 @@
             const firebaseConfig = {
                 databaseURL: "https://mapa-chile-c2b86-default-rtdb.firebaseio.com"
             };
-            
+
             if (!firebase.apps.length) {
                 firebase.initializeApp(firebaseConfig);
             }
@@ -268,19 +228,26 @@
                 }
             });
 
-            // Escuchar cambios en los registros de clientes
+            // Escuchar cambios en la base de datos en tiempo real
             db.ref('clientes_registrados').on('value', (snapshot) => {
-                markersGroup.clearLayers();
                 const tabla = document.getElementById('tablaDirecciones');
                 tabla.innerHTML = '';
-                
+
                 registrosGlobales = snapshot.val() || {};
                 const data = registrosGlobales;
+
+                // Limpiar marcadores que ya no existen en Firebase
+                Object.keys(markersMap).forEach(userKey => {
+                    if (!data[userKey]) {
+                        map.removeLayer(markersMap[userKey]);
+                        delete markersMap[userKey];
+                    }
+                });
 
                 if (Object.keys(data).length > 0) {
                     Object.keys(data).forEach(key => {
                         const item = data[key];
-                        
+
                         if (item.lat && item.lon) {
                             var popupContent = `
                                 <b>👤 Usuario:</b> ${item.usuario || 'N/A'}<br>
@@ -290,9 +257,17 @@
                                 <b>📍 Dirección Base:</b> ${item.direccionCliente}
                             `;
 
-                            var nuevoMarcador = L.marker([item.lat, item.lon], {icon: carIcon})
-                                .bindPopup(popupContent);
-                            markersGroup.addLayer(nuevoMarcador);
+                            // Si el marcador ya existe, solo movemos las coordenadas suavemente
+                            if (markersMap[key]) {
+                                markersMap[key].setLatLng([item.lat, item.lon]);
+                                markersMap[key].setPopupContent(popupContent);
+                            } else {
+                                // Si es un nuevo usuario, creamos el marcador
+                                var nuevoMarcador = L.marker([item.lat, item.lon], {icon: carIcon})
+                                    .bindPopup(popupContent)
+                                    .addTo(map);
+                                markersMap[key] = nuevoMarcador;
+                            }
                         }
 
                         tabla.innerHTML += `
@@ -327,14 +302,14 @@
                     let lon = position.coords.longitude;
                     document.getElementById('addressInput').value = `GPS Actual (${lat.toFixed(5)}, ${lon.toFixed(5)})`;
                     map.setView([lat, lon], 16);
-                    alert("¡Ubicación GPS capturada con éxito en la dirección!");
+                    alert("¡Ubicación GPS capturada con éxito!");
                 },
                 (error) => { alert("Error al obtener GPS: " + error.message); },
-                { enableHighAccuracy: true }
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
         }
 
-        // Guardar la información completa del cliente y activar el rastreo en vivo por su usuario
+        // Guardar la información y activar rastreo
         function guardarYActivarLive() {
             var usuario = document.getElementById('usuarioInput').value.trim();
             var nombreCliente = document.getElementById('nombreInput').value.trim();
@@ -347,11 +322,16 @@
                 return;
             }
 
-            // Identificar coordenadas iniciales (por texto o por GPS capturado)
             if (direccionCliente.includes("GPS Actual")) {
-                navigator.geolocation.getCurrentPosition((pos) => {
-                    grabarEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, pos.coords.latitude, pos.coords.longitude, true);
-                });
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                        grabarEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, pos.coords.latitude, pos.coords.longitude, true);
+                    },
+                    (err) => {
+                        alert("Error al obtener posición actual: " + err.message);
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
             } else {
                 var queryBusqueda = direccionCliente.toLowerCase().includes('chile') ? direccionCliente : direccionCliente + ", Chile";
                 var url = `https://nominatim.openstreetmap.org/search?format=json&countrycodes=cl&q=${encodeURIComponent(queryBusqueda)}`;
@@ -372,7 +352,6 @@
         }
 
         function grabarEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, lat, lon, activarRastreo) {
-            // Usamos el nombre de usuario como clave única para mantener la ficha guardada
             db.ref('clientes_registrados/' + usuario).set({
                 usuario: usuario,
                 nombreCliente: nombreCliente,
@@ -386,19 +365,34 @@
                 if (error) {
                     alert('Error al guardar: ' + error.message);
                 } else {
-                    alert('¡Registro guardado correctamente! El mapa mostrará la posición.');
-                    
+                    alert('¡Registro guardado correctamente! Iniciando rastreo en vivo.');
+
                     if (activarRastreo && navigator.geolocation) {
                         if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-                        
-                        // Inicia el movimiento en tiempo real continuo solo para este usuario
-                        watchId = navigator.geolocation.watchPosition((pos) => {
-                            db.ref('clientes_registrados/' + usuario).update({
-                                lat: pos.coords.latitude,
-                                lon: pos.coords.longitude
-                            });
-                            map.setView([pos.coords.latitude, pos.coords.longitude], 16);
-                        }, null, { enableHighAccuracy: true });
+
+                        // Inicia el monitoreo continuo de ubicación
+                        watchId = navigator.geolocation.watchPosition(
+                            (pos) => {
+                                var newLat = pos.coords.latitude;
+                                var newLon = pos.coords.longitude;
+
+                                // Actualizar coordenadas en Firebase
+                                db.ref('clientes_registrados/' + usuario).update({
+                                    lat: newLat,
+                                    lon: newLon
+                                });
+
+                                map.setView([newLat, newLon], 16);
+                            },
+                            (error) => {
+                                console.warn("Error en seguimiento GPS:", error.message);
+                            },
+                            {
+                                enableHighAccuracy: true,
+                                timeout: 15000,
+                                maximumAge: 0
+                            }
+                        );
                     }
                 }
             });
