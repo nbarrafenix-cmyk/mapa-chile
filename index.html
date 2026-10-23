@@ -131,7 +131,7 @@
         <div class="header">
             <div>
                 <h2>Registro y Seguimiento de Clientes (Chile)</h2>
-                <p style="color: #666; margin: 5px 0 0 0;">Gestión de múltiples ventas, interés de servicio y GPS.</p>
+                <p style="color: #666; margin: 5px 0 0 0;">Gestión de ventas y seguimiento GPS en tiempo real.</p>
             </div>
             <img src="https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=150" alt="Logo Fénix">
         </div>
@@ -142,13 +142,13 @@
 
         <!-- Estado de GPS Activo para el Usuario -->
         <div class="status-box" id="panelEstadoUsuario">
-            <h3 style="color: #27ae60; margin: 0 0 8px 0;">✅ Seguimiento GPS Activo</h3>
+            <h3 style="color: #27ae60; margin: 0 0 8px 0;">✅ Seguimiento GPS en Vivo Activo</h3>
             <p id="infoUsuarioActivo" style="margin: 0 0 12px 0; color: #333; font-size: 14px;"></p>
             <button type="button" class="btn-new" onclick="agregarOtraVenta()">➕ Agregar Nueva Venta / Cliente</button>
             <button type="button" class="btn-stop" onclick="detenerSeguimiento()">🛑 Detener Seguimiento y Salir</button>
         </div>
 
-        <!-- Formulario de Registro de Venta/Cliente con Opción de Servicio -->
+        <!-- Formulario de Registro de Venta/Cliente -->
         <div class="form-group" id="formIngreso">
             <h3 style="margin-top:0; color:#2c3e50;">Formulario de Registro de Venta</h3>
             <div class="form-row">
@@ -169,7 +169,7 @@
             </div>
             <div class="form-row">
                 <button type="button" class="btn-gps" onclick="usarMiGps()">📍 Capturar Dirección GPS</button>
-                <button type="button" class="btn-live" onclick="guardarYActivarLive()" style="flex: 2;">💾 Guardar Venta y Mantener GPS</button>
+                <button type="button" class="btn-live" onclick="guardarYActivarLive()" style="flex: 2;">💾 Guardar Venta y Activar GPS</button>
             </div>
         </div>
 
@@ -225,7 +225,7 @@
         let watchId = null;
         let db = null;
         let registrosGlobales = {};
-        let usuarioActualEnCurso = null;
+        let ventaActualId = null;
 
         try {
             const firebaseConfig = {
@@ -282,8 +282,6 @@
                 return;
             }
 
-            usuarioActualEnCurso = usuario;
-
             if (direccionCliente.includes("GPS Actual")) {
                 navigator.geolocation.getCurrentPosition(
                     (pos) => {
@@ -312,9 +310,10 @@
         }
 
         function grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, quiereServicio, lat, lon) {
-            var ventaId = db.ref('clientes_registrados').push().key;
+            // Generar identificador único para la venta
+            ventaActualId = db.ref('clientes_registrados').push().key;
 
-            db.ref('clientes_registrados/' + ventaId).set({
+            db.ref('clientes_registrados/' + ventaActualId).set({
                 usuario: usuario,
                 nombreCliente: nombreCliente,
                 rutCliente: rutCliente,
@@ -328,24 +327,40 @@
                 if (error) {
                     alert('Error al guardar venta: ' + error.message);
                 } else {
-                    alert('¡Venta guardada con éxito!');
+                    alert('¡Venta guardada y seguimiento GPS en vivo activado!');
 
                     document.getElementById('formIngreso').style.display = 'none';
                     document.getElementById('panelEstadoUsuario').style.display = 'block';
-                    document.getElementById('infoUsuarioActivo').innerText = `Usuario activo: ${usuario} (Transmitiendo GPS en vivo)`;
+                    document.getElementById('infoUsuarioActivo').innerText = `Usuario: ${usuario} | Cliente: ${nombreCliente} (Transmitiendo movimiento real)`;
 
-                    if (watchId === null && navigator.geolocation) {
-                        watchId = navigator.geolocation.watchPosition(
-                            (pos) => {},
-                            (error) => { console.warn("Error en seguimiento GPS:", error.message); },
-                            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-                        );
-                    }
+                    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+
+                    // Monitoreo constante del movimiento real del dispositivo
+                    watchId = navigator.geolocation.watchPosition(
+                        (pos) => {
+                            if (ventaActualId) {
+                                // Actualizamos la posición de ESTA venta en tiempo real conforme el usuario se desplaza
+                                db.ref('clientes_registrados/' + ventaActualId).update({
+                                    lat: pos.coords.latitude,
+                                    lon: pos.coords.longitude
+                                });
+                            }
+                        },
+                        (error) => { console.warn("Error en seguimiento GPS:", error.message); },
+                        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                    );
                 }
             });
         }
 
         function agregarOtraVenta() {
+            // Detenemos el seguimiento anterior de la venta pasada para iniciar una nueva vinculada a otro cliente
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            ventaActualId = null;
+
             document.getElementById('panelEstadoUsuario').style.display = 'none';
             document.getElementById('formIngreso').style.display = 'flex';
 
@@ -361,10 +376,10 @@
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
             }
+            ventaActualId = null;
             document.getElementById('panelEstadoUsuario').style.display = 'none';
             document.getElementById('formIngreso').style.display = 'flex';
-            usuarioActualEnCurso = null;
-            alert("Has finalizado tu sesión de rastreo.");
+            alert("Has finalizado tu sesión de rastreo en vivo.");
         }
 
         function verificarAdmin() {
