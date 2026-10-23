@@ -73,7 +73,9 @@
         .btn-gps:hover { background-color: #1f618d; }
         .btn-live { background-color: #27ae60; }
         .btn-live:hover { background-color: #219653; }
-        .btn-stop { background-color: #c0392b; }
+        .btn-new { background-color: #2980b9; width: 100%; margin-top: 10px; }
+        .btn-new:hover { background-color: #1f618d; }
+        .btn-stop { background-color: #c0392b; width: 100%; margin-top: 10px; }
         .btn-admin {
             background-color: #2c3e50;
             margin-bottom: 15px;
@@ -86,7 +88,7 @@
         .btn-excel:hover { background-color: #219653; }
         
         #mapContainer {
-            display: none; /* Oculto por defecto para usuarios normales */
+            display: none;
             margin-top: 20px;
         }
         #map {
@@ -103,12 +105,11 @@
             font-size: 14px;
             color: #2c3e50;
         }
-        .success-box {
+        .status-box {
             display: none;
             background: #e1f5fe;
             padding: 15px;
             border-radius: 6px;
-            text-align: center;
             margin-bottom: 20px;
             border: 1px solid #b3e5fc;
         }
@@ -129,7 +130,7 @@
         <div class="header">
             <div>
                 <h2>Registro y Seguimiento de Clientes (Chile)</h2>
-                <p style="color: #666; margin: 5px 0 0 0;">Gestión de direcciones con monitoreo exclusivo para administrador.</p>
+                <p style="color: #666; margin: 5px 0 0 0;">Gestión de múltiples ventas y monitoreo GPS en tiempo real.</p>
             </div>
             <img src="https://images.unsplash.com/photo-1508739773434-c26b3d09e071?w=150" alt="Logo Fénix">
         </div>
@@ -138,11 +139,19 @@
             🔄 Inicializando sistema...
         </div>
 
-        <!-- Vista del Usuario / Repartidor para enviar su GPS -->
+        <!-- Estado de GPS Activo para el Usuario -->
+        <div class="status-box" id="panelEstadoUsuario">
+            <h3 style="color: #27ae60; margin: 0 0 8px 0;">✅ Seguimiento GPS Activo</h3>
+            <p id="infoUsuarioActivo" style="margin: 0 0 12px 0; color: #333; font-size: 14px;"></p>
+            <button type="button" class="btn-new" onclick="agregarOtraVenta()">➕ Agregar Nueva Venta / Cliente</button>
+            <button type="button" class="btn-stop" onclick="detenerSeguimiento()">🛑 Detener Seguimiento y Salir</button>
+        </div>
+
+        <!-- Formulario de Registro de Venta/Cliente -->
         <div class="form-group" id="formIngreso">
-            <h3 style="margin-top:0; color:#2c3e50;">Formulario de Registro de Cliente / Conductor</h3>
+            <h3 style="margin-top:0; color:#2c3e50;">Formulario de Registro de Venta</h3>
             <div class="form-row">
-                <input type="text" id="usuarioInput" placeholder="Nombre de usuario (ej: chofer1)">
+                <input type="text" id="usuarioInput" placeholder="Nombre de usuario / Vendedor (ej: chofer1)">
                 <input type="text" id="nombreInput" placeholder="Nombre cliente">
             </div>
             <div class="form-row">
@@ -154,15 +163,8 @@
             </div>
             <div class="form-row">
                 <button type="button" class="btn-gps" onclick="usarMiGps()">📍 Capturar Dirección GPS</button>
-                <button type="button" class="btn-live" onclick="guardarYActivarLive()" style="flex: 2;">🚗 Guardar y Activar Seguimiento en Vivo</button>
+                <button type="button" class="btn-live" onclick="guardarYActivarLive()" style="flex: 2;">💾 Guardar Venta y Mantener GPS</button>
             </div>
-        </div>
-
-        <!-- Mensaje de confirmación cuando el usuario activa su GPS con éxito -->
-        <div class="success-box" id="mensajeActivo">
-            <h3 style="color: #27ae60; margin: 0 0 10px 0;">✅ ¡Seguimiento en vivo activo!</h3>
-            <p style="margin: 0; color: #333;">Tu ubicación GPS se está transmitiendo en tiempo real al administrador. Puedes dejar esta ventana abierta mientras te desplazas.</p>
-            <button type="button" class="btn-stop" onclick="detenerSeguimiento()" style="margin-top: 15px;">🛑 Detener Seguimiento</button>
         </div>
 
         <!-- SECCIÓN DE ADMINISTRADOR -->
@@ -173,7 +175,6 @@
                 <button type="button" onclick="verificarAdmin()">Entrar</button>
             </div>
 
-            <!-- Contenido exclusivo del Administrador (Mapa y Tabla) -->
             <div id="adminContent" style="display:none;">
                 <p style="color: green; font-weight: bold;">✔ Sesión de administrador activa (Acceso a Mapa y Gestión)</p>
                 <button type="button" class="btn-excel" onclick="descargarExcel()">📥 Descargar Registros en Excel</button>
@@ -183,11 +184,11 @@
                     <div id="map"></div>
                 </div>
 
-                <h4>Listado completo de clientes y vehículos:</h4>
+                <h4>Listado completo de ventas y clientes registrados:</h4>
                 <table>
                     <thead>
                         <tr>
-                            <th>Usuario (GPS)</th>
+                            <th>Usuario / Vendedor</th>
                             <th>Nombre Cliente</th>
                             <th>Rut Cliente</th>
                             <th>Número Cliente</th>
@@ -217,7 +218,7 @@
         let watchId = null;
         let db = null;
         let registrosGlobales = {};
-        let isAdmin = false;
+        let usuarioActualEnCurso = null;
 
         try {
             const firebaseConfig = {
@@ -244,7 +245,6 @@
             console.error("Error Firebase:", error);
         }
 
-        // Función para rellenar la dirección con el GPS actual
         function usarMiGps() {
             if (!navigator.geolocation) {
                 alert("Tu navegador no soporta geolocalización.");
@@ -262,7 +262,6 @@
             );
         }
 
-        // Guardar la información y activar rastreo del usuario común
         function guardarYActivarLive() {
             var usuario = document.getElementById('usuarioInput').value.trim();
             var nombreCliente = document.getElementById('nombreInput').value.trim();
@@ -275,10 +274,12 @@
                 return;
             }
 
+            usuarioActualEnCurso = usuario;
+
             if (direccionCliente.includes("GPS Actual")) {
                 navigator.geolocation.getCurrentPosition(
                     (pos) => {
-                        grabarEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, pos.coords.latitude, pos.coords.longitude, true);
+                        grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, pos.coords.latitude, pos.coords.longitude);
                     },
                     (err) => { alert("Error al obtener posición actual: " + err.message); },
                     { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -293,7 +294,7 @@
                         if (data.length > 0) {
                             var lat = parseFloat(data[0].lat);
                             var lon = parseFloat(data[0].lon);
-                            grabarEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, lat, lon, true);
+                            grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, lat, lon);
                         } else {
                             alert('No se encontró la dirección en Chile. Intenta ser más específico o usa el botón de GPS.');
                         }
@@ -302,8 +303,11 @@
             }
         }
 
-        function grabarEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, lat, lon, activarRastreo) {
-            db.ref('clientes_registrados/' + usuario).set({
+        function grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, lat, lon) {
+            // Generamos un ID único por cada venta/cliente para permitir múltiples registros por usuario
+            var ventaId = db.ref('clientes_registrados').push().key;
+
+            db.ref('clientes_registrados/' + ventaId).set({
                 usuario: usuario,
                 nombreCliente: nombreCliente,
                 rutCliente: rutCliente,
@@ -314,22 +318,22 @@
                 fecha: new Date().toISOString()
             }, (error) => {
                 if (error) {
-                    alert('Error al guardar: ' + error.message);
+                    alert('Error al guardar venta: ' + error.message);
                 } else {
-                    // Ocultar formulario de ingreso y mostrar mensaje de éxito en vivo al usuario
+                    alert('¡Venta guardada con éxito!');
+
+                    // Mostrar panel de estado activo y bloquear temporalmente el formulario actual
                     document.getElementById('formIngreso').style.display = 'none';
-                    document.getElementById('mensajeActivo').style.display = 'block';
+                    document.getElementById('panelEstadoUsuario').style.display = 'block';
+                    document.getElementById('infoUsuarioActivo').innerText = `Usuario activo: ${usuario} (Transmitiendo GPS en vivo)`;
 
-                    if (activarRastreo && navigator.geolocation) {
-                        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-
-                        // Inicia el monitoreo continuo enviando ubicación a Firebase
+                    // Iniciar rastreo continuo si no está activo ya
+                    if (watchId === null && navigator.geolocation) {
                         watchId = navigator.geolocation.watchPosition(
                             (pos) => {
-                                db.ref('clientes_registrados/' + usuario).update({
-                                    lat: pos.coords.latitude,
-                                    lon: pos.coords.longitude
-                                });
+                                // Opcional: Actualizar la última posición global del usuario en cada movimiento si se requiere, 
+                                // pero aquí guardamos cada venta con su ubicación de origen. 
+                                // El watchPosition asegura que el navegador mantenga el GPS activo para el usuario.
                             },
                             (error) => { console.warn("Error en seguimiento GPS:", error.message); },
                             { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
@@ -339,25 +343,35 @@
             });
         }
 
+        function agregarOtraVenta() {
+            // Ocultar panel de estado y volver a mostrar el formulario limpiando los campos del cliente (mantiene el usuario)
+            document.getElementById('panelEstadoUsuario').style.display = 'none';
+            document.getElementById('formIngreso').style.display = 'flex';
+
+            document.getElementById('nombreInput').value = '';
+            document.getElementById('rutInput').value = '';
+            document.getElementById('telefonoInput').value = '';
+            document.getElementById('addressInput').value = '';
+        }
+
         function detenerSeguimiento() {
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
             }
-            document.getElementById('mensajeActivo').style.display = 'none';
+            document.getElementById('panelEstadoUsuario').style.display = 'none';
             document.getElementById('formIngreso').style.display = 'flex';
-            alert("Has detenido el envío de ubicación en vivo.");
+            usuarioActualEnCurso = null;
+            alert("Has finalizado tu sesión de rastreo.");
         }
 
         function verificarAdmin() {
             var pass = document.getElementById('adminPassword').value;
             if (pass === "Fenix2020") {
-                isAdmin = true;
                 document.getElementById('loginBox').style.display = 'none';
                 document.getElementById('adminContent').style.display = 'block';
                 document.getElementById('adminPassword').value = '';
                 
-                // Inicializar mapa solo cuando el admin ingresa con éxito
                 inicializarMapaAdmin();
             } else {
                 alert('Contraseña incorrecta');
@@ -382,7 +396,6 @@
                 });
             }
 
-            // Activar escucha de Firebase exclusivamente para el Administrador
             db.ref('clientes_registrados').on('value', (snapshot) => {
                 const tabla = document.getElementById('tablaDirecciones');
                 tabla.innerHTML = '';
@@ -390,11 +403,10 @@
                 registrosGlobales = snapshot.val() || {};
                 const data = registrosGlobales;
 
-                // Limpiar marcadores del mapa que ya no existen
-                Object.keys(markersMap).forEach(userKey => {
-                    if (!data[userKey]) {
-                        map.removeLayer(markersMap[userKey]);
-                        delete markersMap[userKey];
+                Object.keys(markersMap).forEach(key => {
+                    if (!data[key]) {
+                        map.removeLayer(markersMap[key]);
+                        delete markersMap[key];
                     }
                 });
 
@@ -405,10 +417,10 @@
                         if (item.lat && item.lon) {
                             var popupContent = `
                                 <b>👤 Usuario:</b> ${item.usuario || 'N/A'}<br>
-                                <b>📝 Nombre:</b> ${item.nombreCliente || 'N/A'}<br>
+                                <b>📝 Cliente:</b> ${item.nombreCliente || 'N/A'}<br>
                                 <b>🆔 RUT:</b> ${item.rutCliente || 'N/A'}<br>
                                 <b>📞 Teléfono:</b> ${item.numeroCliente || 'N/A'}<br>
-                                <b>📍 Dirección Base:</b> ${item.direccionCliente}
+                                <b>📍 Dirección:</b> ${item.direccionCliente}
                             `;
 
                             if (markersMap[key]) {
@@ -440,7 +452,7 @@
         }
 
         function eliminarRegistro(id) {
-            if (confirm("¿Estás seguro de eliminar este cliente?")) {
+            if (confirm("¿Estás seguro de eliminar este registro?")) {
                 db.ref('clientes_registrados/' + id).remove();
             }
         }
