@@ -77,17 +77,10 @@
         .btn-new { background-color: #2980b9; width: 100%; margin-top: 10px; }
         .btn-new:hover { background-color: #1f618d; }
         .btn-stop { background-color: #c0392b; width: 100%; margin-top: 10px; }
-        .btn-admin {
-            background-color: #2c3e50;
-            margin-bottom: 15px;
-            font-size: 14px;
-            padding: 10px 15px;
-        }
-        .btn-admin:hover { background-color: #1a252f; }
         .btn-delete { background-color: #c0392b; padding: 5px 10px; font-size: 12px; }
         .btn-excel { background-color: #27ae60; margin-bottom: 15px; font-size: 14px; padding: 10px 15px; }
         .btn-excel:hover { background-color: #219653; }
-        
+
         #mapContainer {
             display: none;
             margin-top: 20px;
@@ -177,7 +170,7 @@
         <div id="adminSection">
             <h3>Panel de Control - Administrador</h3>
             <div class="login-box" id="loginBox">
-                <input type="password" id="adminPassword" placeholder="Ingrese contraseña de acceso (Ej: Fenix2020)">
+                <input type="password" id="adminPassword" placeholder="Ingrese contraseña de acceso">
                 <button type="button" onclick="verificarAdmin()">Entrar</button>
             </div>
 
@@ -310,7 +303,6 @@
         }
 
         function grabarVentaEnFirebase(usuario, nombreCliente, rutCliente, numeroCliente, direccionCliente, quiereServicio, lat, lon) {
-            // Generar identificador único para la venta
             ventaActualId = db.ref('clientes_registrados').push().key;
 
             db.ref('clientes_registrados/' + ventaActualId).set({
@@ -335,11 +327,9 @@
 
                     if (watchId !== null) navigator.geolocation.clearWatch(watchId);
 
-                    // Monitoreo constante del movimiento real del dispositivo
                     watchId = navigator.geolocation.watchPosition(
                         (pos) => {
                             if (ventaActualId) {
-                                // Actualizamos la posición de ESTA venta en tiempo real conforme el usuario se desplaza
                                 db.ref('clientes_registrados/' + ventaActualId).update({
                                     lat: pos.coords.latitude,
                                     lon: pos.coords.longitude
@@ -354,7 +344,6 @@
         }
 
         function agregarOtraVenta() {
-            // Detenemos el seguimiento anterior de la venta pasada para iniciar una nueva vinculada a otro cliente
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
@@ -382,13 +371,27 @@
             alert("Has finalizado tu sesión de rastreo en vivo.");
         }
 
-        function verificarAdmin() {
+        // Función para cifrar la contraseña introducida mediante SHA-256
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
+        }
+
+        async function verificarAdmin() {
             var pass = document.getElementById('adminPassword').value;
-            if (pass === "Fenix2020") {
+            // Hash correspondiente a "Fenix2020"
+            const hashAdminEsperado = "55a153fae1f70e7e163b2cf7fae69e4f51fae29eb62e75e9b8971032dfa7ef3f";
+            
+            var hashIngresado = await sha256(pass);
+
+            if (hashIngresado === hashAdminEsperado) {
                 document.getElementById('loginBox').style.display = 'none';
                 document.getElementById('adminContent').style.display = 'block';
                 document.getElementById('adminPassword').value = '';
-                
+
                 inicializarMapaAdmin();
             } else {
                 alert('Contraseña incorrecta');
@@ -397,7 +400,7 @@
 
         function inicializarMapaAdmin() {
             document.getElementById('mapContainer').style.display = 'block';
-            
+
             if (!map) {
                 map = L.map('map').setView([-33.4489, -70.6693], 12);
                 L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
