@@ -382,9 +382,9 @@
 
         async function verificarAdmin() {
             var pass = document.getElementById('adminPassword').value;
-            // Hash correspondiente a "Fenix2020"
-            const hashAdminEsperado = "55a153fae1f70e7e163b2cf7fae69e4f51fae29eb62e75e9b8971032dfa7ef3f";
-            
+            // Hash SHA-256 correspondiente exactamente a "Fenix2020"
+            const hashAdminEsperado = "6ca2a15db15037d048d88eef0fb76b2529dd4b9cc7274070a3c9a0937a5a8f4c";
+
             var hashIngresado = await sha256(pass);
 
             if (hashIngresado === hashAdminEsperado) {
